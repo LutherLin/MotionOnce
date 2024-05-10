@@ -7,7 +7,7 @@ from utils.get_opt import get_opt
 
 def get_dataset_motion_loader(opt_path, batch_size, fname, device):
     opt = get_opt(opt_path, device)
-
+    # print(opt)
     # Configurations of T2M dataset and KIT dataset is almost the same
     if opt.dataset_name == 't2m' or opt.dataset_name == 'kit':
         print('Loading dataset %s ...' % opt.dataset_name)
