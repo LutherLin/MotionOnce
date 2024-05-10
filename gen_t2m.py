@@ -22,7 +22,7 @@ from utils.paramUtil import t2m_kinematic_chain
 
 import numpy as np
 clip_version = 'ViT-B/32'
-
+#111111
 def load_vq_model(vq_opt):
     # opt_path = pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vq_name, 'opt.txt')
     vq_model = RVQVAE(vq_opt,
