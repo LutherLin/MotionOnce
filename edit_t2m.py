@@ -10,6 +10,7 @@ from models.vq.model import RVQVAE, LengthEstimator
 from options.eval_option import EvalT2MOptions
 from utils.get_opt import get_opt
 
+
 from utils.fixseed import fixseed
 from visualization.joints2bvh import Joint2BVHConvertor
 
