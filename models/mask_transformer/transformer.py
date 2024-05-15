@@ -14,6 +14,9 @@ from functools import partial
 from models.mask_transformer.tools import *
 from torch.distributions.categorical import Categorical
 
+
+
+
 class InputProcess(nn.Module):
     def __init__(self, input_feats, latent_dim):
         super().__init__()
