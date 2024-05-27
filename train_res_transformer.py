@@ -4,8 +4,10 @@ import numpy as np
 
 from torch.utils.data import DataLoader
 from os.path import join as pjoin
-
+#!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 from models.mask_transformer.transformer import ResidualTransformer
+# from models.mask_transformer.transformer_copy import ResidualTransformer
+
 from models.mask_transformer.transformer_trainer import ResidualTransformerTrainer
 from models.vq.model import RVQVAE
 
@@ -124,6 +126,7 @@ if __name__ == '__main__':
                                             share_weight=opt.share_weight,
                                           clip_version=clip_version,
                                           opt=opt)
+    print("模型结构：",res_transformer)
     # else:
     #     res_transformer = ResidualTransformer(code_dim=vq_opt.code_dim,
     #                                           cond_mode='text',

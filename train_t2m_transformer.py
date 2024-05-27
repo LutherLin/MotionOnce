@@ -125,8 +125,8 @@ if __name__ == '__main__':
     all_params = 0
     pc_transformer = sum(param.numel() for param in t2m_transformer.parameters_wo_clip())
 
-    # print(t2m_transformer)
-    # print("Total parameters of t2m_transformer net: {:.2f}M".format(pc_transformer / 1000_000))
+    print(t2m_transformer)
+    print("Total parameters of t2m_transformer net: {:.2f}M".format(pc_transformer / 1000_000))
     all_params += pc_transformer
 
     print('Total parameters of all models: {:.2f}M'.format(all_params / 1000_000))
@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
     train_dataset = Text2MotionDataset(opt, mean, std, train_split_file)
     val_dataset = Text2MotionDataset(opt, mean, std, val_split_file)
-
+    print(142,opt.batch_size)
     train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, num_workers=4, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=opt.batch_size, num_workers=4, shuffle=True, drop_last=True)
 

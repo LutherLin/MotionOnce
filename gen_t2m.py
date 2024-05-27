@@ -3,8 +3,10 @@ from os.path import join as pjoin
 
 import torch
 import torch.nn.functional as F
-
+#!!!!!!!!!!!!!!
+# from models.mask_transformer.transformer_copy import MaskTransformer, ResidualTransformer
 from models.mask_transformer.transformer import MaskTransformer, ResidualTransformer
+
 from models.vq.model import RVQVAE, LengthEstimator
 
 from options.eval_option import EvalT2MOptions
@@ -101,6 +103,7 @@ def load_len_estimator(opt):
 
 
 if __name__ == '__main__':
+    # import pdb ; pdb.set_trace()
     parser = EvalT2MOptions()
     opt = parser.parse()
     fixseed(opt.seed)

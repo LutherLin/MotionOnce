@@ -124,7 +124,7 @@ class MaskTransformerTrainer:
             plot_func=plot_eval, save_ckpt=False, save_anim=False
         )
         best_acc = 0.
-
+        
         while epoch < self.opt.max_epoch:
             self.t2m_transformer.train()
             self.vq_model.eval()

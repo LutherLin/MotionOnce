@@ -46,8 +46,7 @@ class RVQTokenizerTrainer:
         pred_local_pos = pred_motion[..., 4 : (self.opt.joints_num - 1) * 3 + 4]
         local_pos = motions[..., 4 : (self.opt.joints_num - 1) * 3 + 4]
         loss_explicit = self.l1_criterion(pred_local_pos, local_pos)
-
-        loss = loss_rec + self.opt.loss_vel * loss_explicit + self.opt.commit * loss_commit
+        loss = 2*loss_rec + self.opt.loss_vel * loss_explicit + self.opt.commit * loss_commit
 
         # return loss, loss_rec, loss_vel, loss_commit, perplexity
         # return loss, loss_rec, loss_percept, loss_commit, perplexity

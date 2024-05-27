@@ -46,7 +46,7 @@ if __name__ == "__main__":
     os.makedirs(opt.meta_dir, exist_ok=True)
     os.makedirs(opt.eval_dir, exist_ok=True)
     os.makedirs(opt.log_dir, exist_ok=True)
-    import pdb;pdb.set_trace()
+    # import pdb;pdb.set_trace()
     if opt.dataset_name == "t2m":
         opt.data_root = '../DATA/HumanML3D/'
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
@@ -77,9 +77,9 @@ if __name__ == "__main__":
 
     mean = np.load(pjoin(opt.data_root, 'Mean.npy'))
     std = np.load(pjoin(opt.data_root, 'Std.npy'))
-
+#!!!!!!!!!!!这里修改！！！
     train_split_file = pjoin(opt.data_root, 'train.txt')
-    val_split_file = pjoin(opt.data_root, 'val.txt')
+    val_split_file = pjoin(opt.data_root, 'test.txt')
 
 
     net = RVQVAE(opt,
@@ -112,7 +112,7 @@ if __name__ == "__main__":
     val_loader = DataLoader(val_dataset, batch_size=opt.batch_size, drop_last=True, num_workers=4,
                             shuffle=True, pin_memory=True)
     eval_val_loader, _ = get_dataset_motion_loader(dataset_opt_path, 32, 'test', device=opt.device)
-    pdb.set_trace()
+    # pdb.set_trace()
     trainer.train(train_loader, val_loader, eval_val_loader, eval_wrapper, plot_t2m)
 
 ## train_vq.py --dataset_name kit --batch_size 512 --name VQVAE_dp2 --gpu_id 3

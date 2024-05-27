@@ -13,9 +13,42 @@ from copy import deepcopy
 from functools import partial
 from models.mask_transformer.tools import *
 from torch.distributions.categorical import Categorical
+from x_transformers import ContinuousTransformerWrapper, Encoder
 
+class BPE_Schedule():
+    def __init__(self, training_rate: float, inference_step: int, max_steps: int) -> None:
+        assert training_rate >= 0 and training_rate <= 1, "training_rate must be between 0 and 1"
+        assert inference_step == -1 or (inference_step >= 0 and inference_step <= max_steps), "inference_step must be between 0 and max_steps"
+        self.training_rate = training_rate
+        self.inference_step = inference_step
+        self.max_steps = max_steps
+        self.last_random = None
 
+    def step(self, t: torch.Tensor, training: bool):
+        self.last_random = torch.rand(t.shape[0], device=t.device)
 
+    def get_schedule_fn(self, t: torch.Tensor, training: bool) -> torch.Tensor:
+        # False --> absolute
+        # True --> relative
+        if training: # at TRAINING: then random dropout
+            return self.last_random < self.training_rate
+        # at INFERENCE: step function as BPE schedule
+        elif self.inference_step == -1: # --> all denoising chain with APE (absolute)
+            return torch.zeros_like(t, dtype=torch.bool)
+        elif self.inference_step == 0: # --> all denoising chain with RPE (relative)
+            return torch.ones_like(t, dtype=torch.bool)
+        else: # --> BPE with binary step function. Step from APE to RPE at "self.inference_step"
+            return ~(t > self.max_steps - self.inference_step)
+    
+    def use_bias(self, t: torch.Tensor, training: bool) -> torch.Tensor:
+        # function that returns True if we should use the absolute bias (only when using multi-segments **inference**)
+        assert (t[0] == t).all(), "Bias from mixed schedule only supported when using same timestep for all batch elements: " + str(t)
+        return ~self.get_schedule_fn(t[0], training) # if APE --> use bias to limit attention to the each subsequence
+
+    def get_time_weights(self, t: torch.Tensor, training: bool) -> torch.Tensor:
+        # 0 --> absolute
+        # 1 --> relative
+        return self.get_schedule_fn(t, training).to(torch.int32)
 
 class InputProcess(nn.Module):
     def __init__(self, input_feats, latent_dim):
@@ -99,7 +132,23 @@ class MaskTransformer(nn.Module):
 
         self.cond_mode = cond_mode
         self.cond_drop_prob = cond_drop_prob
+        self.seqTransEncoder = Encoder(
+                dim = self.latent_dim,
+                depth = num_layers,
+                heads = num_heads,
+                ff_mult = int(np.round(ff_size / self.latent_dim)), # 2 for MDM hyper params
+                layer_dropout = self.dropout, cross_attn_tokens_dropout = 0,
 
+                # ======== FLOWMDM ========
+                # custom_layers=('A', 'f'), # A --> PCCAT
+                # custom_query_fn = self.process_cond_input, # function that merges the condition into the query --> PCCAT dense layer (see Fig. 3)
+                # attn_max_attend_past = self.local_attn_window_size,
+                # attn_max_attend_future = self.local_attn_window_size,
+                # ======== RELATIVE POSITIONAL EMBEDDINGS ========
+                # rotary_pos_emb = True, # rotary embeddings
+                # rotary_bpe_schedule = self.bpe_schedule, # bpe schedule for rotary embeddings (RPE)
+            )
+        
         if self.cond_mode == 'action':
             assert 'num_actions' in kargs
         self.num_actions = kargs.get('num_actions', 1)
@@ -110,14 +159,14 @@ class MaskTransformer(nn.Module):
         self.input_process = InputProcess(self.code_dim, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
 
-        seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
-                                                          nhead=num_heads,
-                                                          dim_feedforward=ff_size,
-                                                          dropout=dropout,
-                                                          activation='gelu')
+        # seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
+        #                                                   nhead=num_heads,
+        #                                                   dim_feedforward=ff_size,
+        #                                                   dropout=dropout,
+        #                                                   activation='gelu')
 
-        self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
-                                                     num_layers=num_layers)
+        # self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
+        #                                              num_layers=num_layers)
 
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
 
@@ -233,11 +282,24 @@ class MaskTransformer(nn.Module):
         xseq = torch.cat([cond, x], dim=0) #(seqlen+1, b, latent_dim)
 
         padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1) #(b, seqlen+1)
-        # print(xseq.shape, padding_mask.shape)
-
+        # print(291,xseq.shape, padding_mask.shape)
+        # print("291",padding_mask)
         # print(padding_mask.shape, xseq.shape)
+        # padding_mask = padding_mask.t()
+        padding_mask = ~padding_mask
 
-        output = self.seqTransEncoder(xseq, src_key_padding_mask=padding_mask)[1:] #(seqlen, b, e)
+        xseq = xseq.permute(1,0,2)#(b, seqlen+1, latent_dim)
+        #mtrans_mask
+        # output = self.seqTransEncoder(xseq, mask=padding_mask) #(b, seqlen+1, latent_dim)
+
+        #mtrans_kv_mask
+        output = self.seqTransEncoder(xseq, self_attn_kv_mask=padding_mask) #(b, seqlen+1, latent_dim)
+        
+        #mtans_mask_mask
+        # output = self.seqTransEncoder(xseq, mask=padding_mask)[1:] #(seqlen, b, e)
+        #mtans_mask_attn
+        #output = self.seqTransEncoder(xseq,attn_mask = padding_mask)[1:] #(seqlen, b, e)torch.Size([1, 1, 50, 32])torch.Size([50, 6, 32, 32])
+        output = output.permute(1,0,2)[1:] #(seqlen, b, e)
         logits = self.output_process(output) #(seqlen, b, e) -> (b, ntoken, seqlen)
         return logits
 
