@@ -106,7 +106,7 @@ if __name__ == '__main__':
     clip_version = 'ViT-B/32'
 
     opt.num_tokens = vq_opt.nb_code
-
+    # print(opt)
     t2m_transformer = MaskTransformer(code_dim=vq_opt.code_dim,
                                       cond_mode='text',
                                       latent_dim=opt.latent_dim,
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     all_params = 0
     pc_transformer = sum(param.numel() for param in t2m_transformer.parameters_wo_clip())
 
-    print(t2m_transformer)
+    # print(t2m_transformer)
     print("Total parameters of t2m_transformer net: {:.2f}M".format(pc_transformer / 1000_000))
     all_params += pc_transformer
 

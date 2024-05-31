@@ -2,8 +2,11 @@ import os
 from os.path import join as pjoin
 
 import torch
-
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# from models.mask_transformer.transformer_copy import MaskTransformer, ResidualTransformer
 from models.mask_transformer.transformer import MaskTransformer, ResidualTransformer
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~
 from models.vq.model import RVQVAE
 
 from options.eval_option import EvalT2MOptions
@@ -156,7 +159,7 @@ if __name__ == '__main__':
         matching = []
         mm = []
 
-        repeat_time = 20
+        repeat_time = opt.repeat_times
         for i in range(repeat_time):
             with torch.no_grad():
                 best_fid, best_div, Rprecision, best_matching, best_mm = \

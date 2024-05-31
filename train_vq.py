@@ -79,7 +79,7 @@ if __name__ == "__main__":
     std = np.load(pjoin(opt.data_root, 'Std.npy'))
 #!!!!!!!!!!!这里修改！！！
     train_split_file = pjoin(opt.data_root, 'train.txt')
-    val_split_file = pjoin(opt.data_root, 'test.txt')
+    val_split_file = pjoin(opt.data_root, 'val.txt')
 
 
     net = RVQVAE(opt,

@@ -136,10 +136,16 @@ class MaskTransformer(nn.Module):
                 dim = self.latent_dim,
                 depth = num_layers,
                 heads = num_heads,
-                ff_mult = int(np.round(ff_size / self.latent_dim)), # 2 for MDM hyper params
-                layer_dropout = self.dropout, cross_attn_tokens_dropout = 0,
+                layer_dropout = self.dropout,
+                ff_mult = int(np.round(ff_size / self.latent_dim)), # 
 
-                # ======== FLOWMDM ========
+                # ======== MotionStory========
+                # ff_glu = True,
+                # ff_swish = True, # set this to True
+                attn_num_mem_kv = 8 ,# 16 memory key / values 
+                rel_pos_bias = True,  # adds relative positional bias to all attention layers, a la T5
+                
+                
                 # custom_layers=('A', 'f'), # A --> PCCAT
                 # custom_query_fn = self.process_cond_input, # function that merges the condition into the query --> PCCAT dense layer (see Fig. 3)
                 # attn_max_attend_past = self.local_attn_window_size,
@@ -282,23 +288,11 @@ class MaskTransformer(nn.Module):
         xseq = torch.cat([cond, x], dim=0) #(seqlen+1, b, latent_dim)
 
         padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1) #(b, seqlen+1)
-        # print(291,xseq.shape, padding_mask.shape)
-        # print("291",padding_mask)
-        # print(padding_mask.shape, xseq.shape)
-        # padding_mask = padding_mask.t()
         padding_mask = ~padding_mask
-
         xseq = xseq.permute(1,0,2)#(b, seqlen+1, latent_dim)
         #mtrans_mask
-        # output = self.seqTransEncoder(xseq, mask=padding_mask) #(b, seqlen+1, latent_dim)
+        output = self.seqTransEncoder(xseq, mask=padding_mask) #(b, seqlen+1, latent_dim)
 
-        #mtrans_kv_mask
-        output = self.seqTransEncoder(xseq, self_attn_kv_mask=padding_mask) #(b, seqlen+1, latent_dim)
-        
-        #mtans_mask_mask
-        # output = self.seqTransEncoder(xseq, mask=padding_mask)[1:] #(seqlen, b, e)
-        #mtans_mask_attn
-        #output = self.seqTransEncoder(xseq,attn_mask = padding_mask)[1:] #(seqlen, b, e)torch.Size([1, 1, 50, 32])torch.Size([50, 6, 32, 32])
         output = output.permute(1,0,2)[1:] #(seqlen, b, e)
         logits = self.output_process(output) #(seqlen, b, e) -> (b, ntoken, seqlen)
         return logits
@@ -677,7 +671,7 @@ class ResidualTransformer(nn.Module):
                  num_heads=4, dropout=0.1, clip_dim=512, shared_codebook=False, share_weight=False,
                  clip_version=None, opt=None, **kargs):
         super(ResidualTransformer, self).__init__()
-        print(f'latent_dim: {latent_dim}, ff_size: {ff_size}, nlayers: {num_layers}, nheads: {num_heads}, dropout: {dropout}')
+        print(f'latent_dim: {latent_dim}, ff_size: {int(np.round(ff_size / latent_dim))*latent_dim}, nlayers: {num_layers}, nheads: {num_heads}, dropout: {dropout}')
 
         # assert shared_codebook == True, "Only support shared codebook right now!"
 
@@ -701,15 +695,28 @@ class ResidualTransformer(nn.Module):
         self.input_process = InputProcess(self.code_dim, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
 
-        seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
-                                                          nhead=num_heads,
-                                                          dim_feedforward=ff_size,
-                                                          dropout=dropout,
-                                                          activation='gelu')
+        # seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
+        #                                                   nhead=num_heads,
+        #                                                   dim_feedforward=ff_size,
+        #                                                   dropout=dropout,
+        #                                                   activation='gelu')
 
-        self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
-                                                     num_layers=num_layers)
-
+        # self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
+        #                                              num_layers=num_layers)
+        self.seqTransEncoder = ContinuousTransformerWrapper(
+            dim_in = self.latent_dim, dim_out = self.latent_dim,
+            emb_dropout = self.dropout,
+            max_seq_len = 1024,
+            use_abs_pos_emb = True,
+            attn_layers = Encoder(
+                dim = self.latent_dim,
+                depth = num_layers,
+                heads = num_heads,
+                ff_mult = int(np.round(ff_size / self.latent_dim)), # 2 for MDM hyper params
+                layer_dropout = self.dropout, 
+                cross_attn_tokens_dropout = 0,
+            )
+        )
         self.encode_quant = partial(F.one_hot, num_classes=self.opt.num_quantizers)
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
 
@@ -868,9 +875,11 @@ class ResidualTransformer(nn.Module):
 
         x = self.position_enc(x)
         xseq = torch.cat([cond, q_emb, x], dim=0)  # (seqlen+2, b, latent_dim)
-
+        xseq = xseq.permute(1,0,2)
         padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:2]), padding_mask], dim=1)  # (b, seqlen+2)
-        output = self.seqTransEncoder(xseq, src_key_padding_mask=padding_mask)[2:]  # (seqlen, b, e)
+        padding_mask = ~padding_mask #取反很重要
+        output = self.seqTransEncoder(xseq, mask=padding_mask)  # ( b, seqlen,e)
+        output = output.permute(1,0,2)[2:]
         logits = self.output_process(output)
         return logits
 

@@ -9,7 +9,7 @@ class EvalT2MOptions(BaseOptions):
         self.parser.add_argument('--ext', type=str, default='text2motion', help='Extension of the result file or folder')
         self.parser.add_argument("--num_batch", default=2, type=int,
                                  help="Number of batch for generation")
-        self.parser.add_argument("--repeat_times", default=1, type=int,
+        self.parser.add_argument("--repeat_times", default=5, type=int,
                                  help="Number of repetitions, per sample text prompt")
         self.parser.add_argument("--cond_scale", default=4, type=float,
                                  help="For classifier-free sampling - specifies the s parameter, as defined in the paper.")
