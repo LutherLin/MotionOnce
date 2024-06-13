@@ -30,6 +30,8 @@ class EvaluatorModelWrapper(object):
 
         if opt.dataset_name == 't2m':
             opt.dim_pose = 263
+        elif opt.dataset_name == 'uni':
+            opt.dim_pose = 263
         elif opt.dataset_name == 'kit':
             opt.dim_pose = 251
         else:

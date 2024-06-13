@@ -14,7 +14,7 @@ from typing import List
 from einops import rearrange, repeat, reduce
 from einops.layers.torch import Rearrange
 
-from model.x_transformers.attend import Attend, Intermediates, CascadingHeads
+from models.x_transformers.attend import Attend, Intermediates, CascadingHeads
 import matplotlib.pyplot as plt
 import os
 

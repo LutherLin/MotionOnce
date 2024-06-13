@@ -13,7 +13,14 @@ from copy import deepcopy
 from functools import partial
 from models.mask_transformer.tools import *
 from torch.distributions.categorical import Categorical
-from x_transformers import ContinuousTransformerWrapper, Encoder
+# from models.x_transformers.x_transformers import ContinuousTransformerWrapper, Encoder
+from x_transformers import ContinuousTransformerWrapper, Encoder,Decoder, TransformerWrapper
+from models.cross_attention import (SkipTransformerEncoder,
+                                    TransformerDecoder,
+                                    TransformerDecoderLayer,
+                                    TransformerEncoder,
+                                    TransformerEncoderLayer)
+
 
 class BPE_Schedule():
     def __init__(self, training_rate: float, inference_step: int, max_steps: int) -> None:
@@ -132,29 +139,93 @@ class MaskTransformer(nn.Module):
 
         self.cond_mode = cond_mode
         self.cond_drop_prob = cond_drop_prob
-        self.seqTransEncoder = Encoder(
-                dim = self.latent_dim,
-                depth = num_layers,
-                heads = num_heads,
-                layer_dropout = self.dropout,
-                ff_mult = int(np.round(ff_size / self.latent_dim)), # 
+        self.use_pos_enc = True
+        # ===============1=====================
+        # self.seqTransEncoder = Encoder(
+        #         dim = self.latent_dim,
+        #         depth = num_layers,
+        #         heads = num_heads,
+        #         layer_dropout = self.dropout,
+        #         # ff_mult = int(np.round(ff_size / self.latent_dim)), # 
+        #         ff_mult = 2.6667, # 
 
-                # ======== MotionStory========
-                # ff_glu = True,
-                # ff_swish = True, # set this to True
-                attn_num_mem_kv = 8 ,# 16 memory key / values 
-                rel_pos_bias = True,  # adds relative positional bias to all attention layers, a la T5
+
+        #         # ======== MotionStory========
+        #         # ff_glu = True,
+        #         # ff_swish = True, # set this to True
+        #         attn_num_mem_kv = 16 ,# 16 memory key / values 
+        #         rel_pos_bias = True,  # adds relative positional bias to all attention layers, a la T5
                 
-                
-                # custom_layers=('A', 'f'), # A --> PCCAT
-                # custom_query_fn = self.process_cond_input, # function that merges the condition into the query --> PCCAT dense layer (see Fig. 3)
-                # attn_max_attend_past = self.local_attn_window_size,
-                # attn_max_attend_future = self.local_attn_window_size,
-                # ======== RELATIVE POSITIONAL EMBEDDINGS ========
-                # rotary_pos_emb = True, # rotary embeddings
-                # rotary_bpe_schedule = self.bpe_schedule, # bpe schedule for rotary embeddings (RPE)
+        #         # =========================
+        #         rotary_pos_emb = True, # rotary embeddings
+
+        #     )
+
+        # ==================2=======================
+        # self.seqTransEncoder = ContinuousTransformerWrapper(
+        #     # dim_in = self.code_dim, dim_out = self.latent_dim,
+        #     emb_dropout = self.dropout,
+        #     max_seq_len = 1024,
+        #     use_abs_pos_emb = False,
+        #     attn_layers = Encoder(
+        #         dim = self.latent_dim,
+        #         depth = num_layers,
+        #         heads = num_heads,
+        #         # ff_mult = int(np.round(ff_size / self.latent_dim)), # 2 for MDM hyper params
+        #         ff_mult = 2.66667, # 2 for MDM hyper params
+        #         layer_dropout = self.dropout, 
+        #         cross_attn_tokens_dropout = 0,
+        #         rel_pos_bias = True,
+        #         attn_num_mem_kv = 16 ,# 16 memory key / values 
+        #         # ======== RELATIVE POSITIONAL EMBEDDINGS ========
+        #         rotary_pos_emb = True, # rotary embeddings
+        #     )
+        # )
+        # self.use_pos_enc = False
+
+        # ====================3=============================
+        if not self.opt.use_ar:
+            seqTransEncoderLayer = TransformerEncoderLayer(
+                d_model = self.latent_dim,
+                nhead= num_heads,
+                dim_feedforward = ff_size,
+                dropout=self.dropout,
+                activation='gelu',
+                # normalize_before=True,
             )
+            encoder_norm = nn.LayerNorm(self.latent_dim)
+            self.seqTransEncoder = SkipTransformerEncoder(
+                encoder_layer = seqTransEncoderLayer,
+                num_layers = num_layers, 
+                norm = encoder_norm)
         
+        # ======================4============================
+        # seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
+        #                                                   nhead=num_heads,
+        #                                                   dim_feedforward=ff_size,
+        #                                                   dropout=dropout,
+        #                                                   activation='gelu')
+
+        # self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
+        #                                              num_layers=num_layers)
+        if self.opt.use_ar:
+            print("使用自回归！！！！！！！！！！！")
+            norm_first = False
+            seqTransDecoderLayer = nn.TransformerDecoderLayer(
+                d_model=self.latent_dim,
+                nhead=num_heads,
+                dim_feedforward=ff_size,
+                dropout=dropout,
+                activation='gelu',
+                # norm_first=False,
+            )
+            self.seqTransDecoder = nn.TransformerDecoder(
+                decoder_layer=seqTransDecoderLayer,
+                num_layers=num_layers,
+                norm=nn.LayerNorm(self.latent_dim) if norm_first else None,
+                # return_intermediate=False,
+            )
+        # ================================================
         if self.cond_mode == 'action':
             assert 'num_actions' in kargs
         self.num_actions = kargs.get('num_actions', 1)
@@ -165,14 +236,7 @@ class MaskTransformer(nn.Module):
         self.input_process = InputProcess(self.code_dim, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
 
-        # seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
-        #                                                   nhead=num_heads,
-        #                                                   dim_feedforward=ff_size,
-        #                                                   dropout=dropout,
-        #                                                   activation='gelu')
 
-        # self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
-        #                                              num_layers=num_layers)
 
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
 
@@ -207,6 +271,8 @@ class MaskTransformer(nn.Module):
             self.clip_model = self.load_and_freeze_clip(clip_version)
 
         self.noise_schedule = cosine_schedule
+        if self.use_pos_enc:
+            print("~~~~~~~~~~~~~~使用位置编码~~~~~~~~~~~~~~~~~")
 
     def load_and_freeze_token_emb(self, codebook):
         '''
@@ -263,7 +329,13 @@ class MaskTransformer(nn.Module):
             return cond * (1. - mask)
         else:
             return cond
+    def pad_y_eos(self, y):
+        # targets = F.pad(y, (0, 1), value=0) + eos_id * F.pad(
+        #     y_mask_int, (0, 1), value=1
+        # )
+        targets = F.pad(y, (0, 1), value=self.mask_id)
 
+        return targets[:, :-1], targets[:, 1:]
     def trans_forward(self, motion_ids, cond, padding_mask, force_mask=False):
         '''
         :param motion_ids: (b, seqlen)
@@ -273,38 +345,60 @@ class MaskTransformer(nn.Module):
         :return:
             -logits: (b, num_token, seqlen)
         '''
-
         cond = self.mask_cond(cond, force_mask=force_mask)
-
         # print(motion_ids.shape)
-        x = self.token_emb(motion_ids)
-        # print(x.shape)
-        # (b, seqlen, d) -> (seqlen, b, latent_dim)
+        # import pdb; pdb.set_trace()
+        x = self.token_emb(motion_ids)# (b, seqlen, d) -> (seqlen, b, latent_dim)
         x = self.input_process(x)
 
         cond = self.cond_emb(cond).unsqueeze(0) #(1, b, latent_dim)
 
-        x = self.position_enc(x)
+        if self.use_pos_enc:
+            x = self.position_enc(x)
+
         xseq = torch.cat([cond, x], dim=0) #(seqlen+1, b, latent_dim)
 
         padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1) #(b, seqlen+1)
-        padding_mask = ~padding_mask
-        xseq = xseq.permute(1,0,2)#(b, seqlen+1, latent_dim)
-        #mtrans_mask
-        output = self.seqTransEncoder(xseq, mask=padding_mask) #(b, seqlen+1, latent_dim)
+        #+++++++++++++这里注释了++++++++++++++
+        # padding_mask = ~padding_mask
+        # xseq = xseq.permute(1,0,2)#(b, seqlen+1, latent_dim)
+        # #mtrans_mask
+        # output = self.seqTransEncoder(xseq, mask=padding_mask) #(b, seqlen+1, latent_dim)
+        # output = output.permute(1,0,2)[1:] #(seqlen, b, e)
 
-        output = output.permute(1,0,2)[1:] #(seqlen, b, e)
+        # +++++++++++++++++++++++++++++++++++++
+        # use autoregressive decoder
+        if self.opt.use_ar:
+            xseq_lens = xseq.shape[0]
+            tgt_mask = torch.triu(
+                torch.ones(xseq_lens, xseq_lens, device=xseq.device, dtype=torch.bool),
+                diagonal=1,
+            )
+            output = self.seqTransDecoder(tgt =  xseq,
+                                          memory = cond, 
+                                        #   tgt_mask = tgt_mask,
+                                          memory_mask = None,
+                                          tgt_key_padding_mask=padding_mask,
+                                          memory_key_padding_mask=None,
+                                          )[1:] #(seqlen, b, e)
+            # print(output.shape)
+        # use bidirectional encoder
+        else:
+            output = self.seqTransEncoder(xseq, src_key_padding_mask=padding_mask)[1:] #(seqlen, b, e)
+        # +++++++++++++++++++++++++++++++++
+        # print("output",output.shape)
         logits = self.output_process(output) #(seqlen, b, e) -> (b, ntoken, seqlen)
         return logits
 
     def forward(self, ids, y, m_lens):
+        # import pdb; pdb.set_trace()
         '''
         :param ids: (b, n)
         :param y: raw text for cond_mode=text, (b, ) for cond_mode=action
         :m_lens: (b,)
         :return:
         '''
-
+        # import pdb; pdb.set_trace() 
         bs, ntokens = ids.shape
         device = ids.device
 
@@ -340,24 +434,31 @@ class MaskTransformer(nn.Module):
         mask &= non_pad_mask
 
         # Note this is our training target, not input
-        labels = torch.where(mask, ids, self.mask_id)
-
+        # labels = torch.where(mask, ids, self.mask_id)
         x_ids = ids.clone()
-
+        tmp_ids =  torch.where(non_pad_mask, ids, self.mask_id)
+        _, labels = self.pad_y_eos(tmp_ids)
+        # labels = x_ids
+        # print(labels.shape)
+        #================== Mask Schedule =====================
         # Further Apply Bert Masking Scheme
         # Step 1: 10% replace with an incorrect token
-        mask_rid = get_mask_subset_prob(mask, 0.1)
-        rand_id = torch.randint_like(x_ids, high=self.opt.num_tokens)
-        x_ids = torch.where(mask_rid, rand_id, x_ids)
-        # Step 2: 90% x 10% replace with correct token, and 90% x 88% replace with mask token
-        mask_mid = get_mask_subset_prob(mask & ~mask_rid, 0.88)
+        # mask_rid = get_mask_subset_prob(mask, 0.1)
+        # rand_id = torch.randint_like(x_ids, high=self.opt.num_tokens)
+        # x_ids = torch.where(mask_rid, rand_id, x_ids)
+        # # Step 2: 90% x 10% replace with correct token, and 90% x 88% replace with mask token
+        # mask_mid = get_mask_subset_prob(mask & ~mask_rid, 0.88)
 
-        # mask_mid = mask
+        # # mask_mid = mask
 
-        x_ids = torch.where(mask_mid, self.mask_id, x_ids)
+        # x_ids = torch.where(mask_mid, self.mask_id, x_ids)
+        #====================                ===================
 
         logits = self.trans_forward(x_ids, cond_vector, ~non_pad_mask, force_mask)
+        # print(logits.shape)
+        # ce_loss, pred_id, acc = cal_performance(logits, labels, ignore_index=self.mask_id)
         ce_loss, pred_id, acc = cal_performance(logits, labels, ignore_index=self.mask_id)
+
 
         return ce_loss, pred_id, acc
 
@@ -395,7 +496,7 @@ class MaskTransformer(nn.Module):
                  ):
         # print(self.opt.num_quantizers)
         # assert len(timesteps) >= len(cond_scales) == self.opt.num_quantizers
-
+        # import pdb; pdb.set_trace()
         device = next(self.parameters()).device
         seq_len = max(m_lens)
         batch_size = len(m_lens)
@@ -446,7 +547,7 @@ class MaskTransformer(nn.Module):
 
             logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
             # print(logits.shape, self.opt.num_tokens)
-            # clean low prob token
+            # clean low prob tokenn
             filtered_logits = top_k(logits, topk_filter_thres, dim=-1)
 
             '''

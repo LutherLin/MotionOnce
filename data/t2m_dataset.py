@@ -94,7 +94,7 @@ class Text2MotionDatasetEval(data.Dataset):
         self.max_length = 20
         self.pointer = 0
         self.max_motion_length = opt.max_motion_length
-        min_motion_len = 40 if self.opt.dataset_name =='t2m' else 24
+        min_motion_len = 40 if (self.opt.dataset_name =='t2m' or self.opt.dataset_name =='uni' ) else 24
 
         data_dict = {}
         id_list = []
@@ -105,7 +105,8 @@ class Text2MotionDatasetEval(data.Dataset):
 
         new_name_list = []
         length_list = []
-        for name in tqdm(id_list):
+        # import pdb;pdb.set_trace()
+        for name in tqdm(id_list,desc="loading val motions"):
             try:
                 motion = np.load(pjoin(opt.motion_dir, name + '.npy'))
                 if (len(motion)) < min_motion_len or (len(motion) >= 200):
@@ -152,7 +153,8 @@ class Text2MotionDatasetEval(data.Dataset):
                                        'text': text_data}
                     new_name_list.append(name)
                     length_list.append(len(motion))
-            except:
+            except Exception as e:
+                print(e)
                 pass
 
         name_list, length_list = zip(*sorted(zip(new_name_list, length_list), key=lambda x: x[1]))

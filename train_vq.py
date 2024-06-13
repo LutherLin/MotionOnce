@@ -48,7 +48,8 @@ if __name__ == "__main__":
     os.makedirs(opt.log_dir, exist_ok=True)
     # import pdb;pdb.set_trace()
     if opt.dataset_name == "t2m":
-        opt.data_root = '../DATA/HumanML3D/'
+        # opt.data_root = '../DATA/HumanML3D/'
+        opt.data_root = '../DATA/humanml3d2/'
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
         opt.text_dir = pjoin(opt.data_root, 'texts')
         opt.joints_num = 22
@@ -57,7 +58,16 @@ if __name__ == "__main__":
         radius = 4
         kinematic_chain = paramUtil.t2m_kinematic_chain
         dataset_opt_path = './checkpoints/t2m/Comp_v6_KLD005/opt.txt'
-
+    elif opt.dataset_name == "uni":
+        opt.data_root = '../DATA/body-only-unimocap/UniMocap/'
+        opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
+        opt.text_dir = pjoin(opt.data_root, 'texts')
+        opt.joints_num = 22
+        dim_pose = 263
+        fps = 20
+        radius = 4
+        kinematic_chain = paramUtil.t2m_kinematic_chain
+        dataset_opt_path = './checkpoints/uni/Comp_v6_KLD005/opt.txt'
     elif opt.dataset_name == "kit":
         opt.data_root = '../DATA/kitML'
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')

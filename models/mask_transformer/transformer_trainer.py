@@ -36,7 +36,7 @@ class MaskTransformerTrainer:
 
 
     def forward(self, batch_data):
-
+        # import pdb;pdb.set_trace()
         conds, motion, m_lens = batch_data
         motion = motion.detach().float().to(self.device)
         m_lens = m_lens.detach().long().to(self.device)
