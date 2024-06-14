@@ -5,6 +5,7 @@ import torch
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~
 from models.mask_transformer.transformer_copy import MaskTransformer, ResidualTransformer
 # from models.mask_transformer.transformer import MaskTransformer, ResidualTransformer
+# from models.mask_transformer.transformer import MaskTransformer
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~
 from models.vq.model import RVQVAE

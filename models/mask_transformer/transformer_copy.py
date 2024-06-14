@@ -242,7 +242,7 @@ class MaskTransformer(nn.Module):
         return logits
 
     def forward(self, ids, y, m_lens):
-        import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         '''
         :param ids: (b, n)
         :param y: raw text for cond_mode=text, (b, ) for cond_mode=action

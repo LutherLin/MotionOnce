@@ -439,7 +439,9 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, vq_model, writer, ep
 
     nb_sample = 0
     # for i in range(1):
+    
     for batch in val_loader:
+        # import pdb;pdb.set_trace()
         word_embeddings, pos_one_hots, clip_text, sent_len, pose, m_length, token = batch
         m_length = m_length.cuda()
 
@@ -457,7 +459,11 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, vq_model, writer, ep
                                                           m_length)
 
         pose = pose.cuda().float()
-
+        #++++++++++++++++test+++++++++++++++++
+        # code_idx, _ = vq_model.encode(pose)
+        # print(mids[0])
+        # print(code_idx[0])
+        #+++++++++++++++++++++++++++++++++++++++
         et, em = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, pose, m_length)
         motion_annotation_list.append(em)
         motion_pred_list.append(em_pred)

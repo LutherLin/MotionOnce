@@ -77,7 +77,7 @@ if __name__ == '__main__':
     os.makedirs(opt.log_dir, exist_ok=True)
 
     if opt.dataset_name == 't2m':
-        opt.data_root = '../DATA/HumanML3D'
+        opt.data_root = '../../DATA/humanml3d2'
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
         opt.joints_num = 22
         opt.max_motion_len = 55
@@ -88,7 +88,7 @@ if __name__ == '__main__':
         dataset_opt_path = './checkpoints/t2m/Comp_v6_KLD005/opt.txt'
 
     elif opt.dataset_name == 'kit': #TODO
-        opt.data_root = '../DATA/kitML'
+        opt.data_root = '../../DATA/kitML'
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
         opt.joints_num = 21
         radius = 240 * 8
