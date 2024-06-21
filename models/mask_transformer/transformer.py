@@ -127,29 +127,29 @@ class MaskTransformer(nn.Module):
         #     )
 
         # ==================2=======================
-        if self.opt.use_ar:
-            print("使用自回归！！！！！！！！！！！")
-            self.seqTransDecoder = ContinuousTransformerWrapper(
-                # dim_in = self.code_dim, dim_out = self.latent_dim,
-                emb_dropout = self.dropout,
-                max_seq_len = 1024,
-                use_abs_pos_emb = False,
-                attn_layers = Decoder(
-                    dim = self.latent_dim,
-                    depth = num_layers,
-                    heads = num_heads,
-                    # ff_mult = int(np.round(ff_size / self.latent_dim)), # 2 for MDM hyper params
-                    ff_mult = 2.66667, # 2 for MDM hyper params
-                    layer_dropout = self.dropout, 
-                    cross_attn_tokens_dropout = 0,
-                    # rel_pos_bias = True,
-                    # attn_num_mem_kv = 16 ,# 16 memory key / values 
-                    # # ======== RELATIVE POSITIONAL EMBEDDINGS ========
-                    # rotary_pos_emb = True, # rotary embeddings
-                )
-            )
-            # self.ar_model = ContinuousAutoregressiveWrapper(seqTransDecoder)
-            self.use_pos_enc = False
+        # if self.opt.use_ar:
+        #     print("使用自回归！！！！！！！！！！！")
+        #     self.seqTransDecoder = ContinuousTransformerWrapper(
+        #         # dim_in = self.code_dim, dim_out = self.latent_dim,
+        #         emb_dropout = self.dropout,
+        #         max_seq_len = 1024,
+        #         use_abs_pos_emb = False,
+        #         attn_layers = Decoder(
+        #             dim = self.latent_dim,
+        #             depth = num_layers,
+        #             heads = num_heads,
+        #             # ff_mult = int(np.round(ff_size / self.latent_dim)), # 2 for MDM hyper params
+        #             ff_mult = 2.66667, # 2 for MDM hyper params
+        #             layer_dropout = self.dropout, 
+        #             cross_attn_tokens_dropout = 0,
+        #             # rel_pos_bias = True,
+        #             # attn_num_mem_kv = 16 ,# 16 memory key / values 
+        #             # # ======== RELATIVE POSITIONAL EMBEDDINGS ========
+        #             # rotary_pos_emb = True, # rotary embeddings
+        #         )
+        #     )
+        #     # self.ar_model = ContinuousAutoregressiveWrapper(seqTransDecoder)
+        #     self.use_pos_enc = False
 
         # ====================3=============================
         if not self.opt.use_ar:
@@ -176,23 +176,23 @@ class MaskTransformer(nn.Module):
 
         # self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
         #                                              num_layers=num_layers)
-        # if self.opt.use_ar:
-            # print("使用自回归！！！！！！！！！！！")
-            # norm_first = False
-            # seqTransDecoderLayer = nn.TransformerDecoderLayer(
-            #     d_model=self.latent_dim,
-            #     nhead=num_heads,
-            #     dim_feedforward=ff_size,
-            #     dropout=dropout,
-            #     activation='gelu',
-            #     # norm_first=False,
-            # )
-            # self.seqTransDecoder = nn.TransformerDecoder(
-            #     decoder_layer=seqTransDecoderLayer,
-            #     num_layers=num_layers,
-            #     norm=nn.LayerNorm(self.latent_dim) if norm_first else None,
-            #     # return_intermediate=False,
-            # )
+        if self.opt.use_ar:
+            print("11使用自回归！！！！！！！！！！！")
+            norm_first = False
+            seqTransDecoderLayer = nn.TransformerDecoderLayer(
+                d_model=self.latent_dim,
+                nhead=num_heads,
+                dim_feedforward=ff_size,
+                dropout=dropout,
+                activation='gelu',
+                # norm_first,
+            )
+            self.seqTransDecoder = nn.TransformerDecoder(
+                decoder_layer=seqTransDecoderLayer,
+                num_layers=num_layers,
+                norm=nn.LayerNorm(self.latent_dim) if norm_first else None,
+                # return_intermediate=False,
+            )
         # ================================================
         if self.cond_mode == 'action':
             assert 'num_actions' in kargs
@@ -219,10 +219,10 @@ class MaskTransformer(nn.Module):
             raise KeyError("Unsupported condition mode!!!")
 
 
-        _num_tokens = opt.num_tokens + 2  # two dummy tokens, one for masking, one for padding
-        self.mask_id = opt.num_tokens
-        self.pad_id = opt.num_tokens + 1
-
+        _num_tokens = opt.num_tokens +1  # two dummy tokens, one for masking, one for padding
+        # self.mask_id = opt.num_tokens
+        self.pad_id = opt.num_tokens
+        print(225,"~~~~~~~~~~~",self.pad_id)
         self.output_process = OutputProcess_Bert(out_feats=opt.num_tokens, latent_dim=latent_dim)
 
         self.token_emb = nn.Embedding(_num_tokens, self.code_dim)
@@ -297,13 +297,6 @@ class MaskTransformer(nn.Module):
             return cond * (1. - mask)
         else:
             return cond
-    def pad_y_eos(self, y):
-        # targets = F.pad(y, (0, 1), value=0) + eos_id * F.pad(
-        #     y_mask_int, (0, 1), value=1
-        # )
-        targets = F.pad(y, (0, 1), value=self.mask_id)
-
-        return targets[:, :-1], targets[:, 1:]
     def trans_forward(self, motion_ids, cond, padding_mask, force_mask=False,skip_cond = False):
         # import pdb;pdb.set_trace()
         '''
@@ -319,37 +312,49 @@ class MaskTransformer(nn.Module):
         # print(motion_ids.shape)
         # import pdb; pdb.set_trace()
         if len(motion_ids):
-            x = self.token_emb(motion_ids)# (b, seqlen, d) -> (seqlen, b, latent_dim)
+            x = self.token_emb(motion_ids)# (b, seqlen-1, d) -> (seqlen-1, b, latent_dim)
             x = self.input_process(x)
 
             # cond = self.cond_emb(cond).unsqueeze(0) #(1, b, latent_dim)
-            if self.use_pos_enc:
-                x = self.position_enc(x)
+            # if self.use_pos_enc:
+            #     x = self.position_enc(x)
 
             
-            xseq = torch.cat([cond, x], dim=0) #(seqlen+1, b, latent_dim)
+            xseq = torch.cat([cond, x], dim=0) #(seqlen, b, latent_dim)
+
             padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1) #(b, seqlen+1)
-            padding_mask = ~padding_mask
-            # if not skip_cond:
-            #     padding_mask = padding_mask[:,:-1]
-            #     xseq = xseq[:,:-1]
+            
+            #~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            # padding_mask = ~padding_mask
+            #~~~~~~~~~~~~~~~~~~~~~~~~~~
         else:
-            xseq = cond
+            xseq = cond #(1, b, latent_dim)
     #+++++++++++++这里注释了++++++++++++++
-        
-        xseq = xseq.permute(1,0,2)#(b, seqlen+1, latent_dim)
+        # #~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        # xseq = xseq.permute(1,0,2)#(b, seqlen+1, latent_dim)
+        # #~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+        if self.use_pos_enc:
+            xseq = self.position_enc(xseq)
+
         if self.opt.use_ar:
-            # if not skip_cond:
-            #     padding_mask = padding_mask[:,:-1]
-            #     xseq = xseq[:,:-1]
-            output = self.seqTransDecoder(xseq, mask=padding_mask)
+            xseq_lens = xseq.shape[0]
+            tgt_mask = torch.triu(
+                torch.ones(xseq_lens, xseq_lens, device=xseq.device, dtype=torch.bool),
+                diagonal=1,
+            )
+            # output = self.seqTransDecoder(xseq, mask=~padding_mask if padding_mask else None) #(b, seqlen, latent_dim)
+            output = self.seqTransDecoder(tgt = xseq, 
+                                          memory = cond,
+                                          tgt_mask = tgt_mask,
+                                          tgt_key_padding_mask = padding_mask,
+                                        #   memory_key_padding_mask = padding_mask,
+                                        #   memory_mask = tgt_mask,
+                                          ) #( seqlen,b, latent_dim)
         else:
             output = self.seqTransEncoder(xseq, mask=padding_mask) #(b, seqlen+1, latent_dim)
 
-        output = output.permute(1,0,2) #(seqlen, b, e)
-    # output = output.permute(1,0,2)[1:] #(seqlen, b, e)
-
-
+        # output = output.permute(1,0,2) #(seqlen, b, e)
         # +++++++++++++++++++++++++++++++++++++
         # use autoregressive decoder
         # if self.opt.use_ar:
@@ -544,182 +549,182 @@ class MaskTransformer(nn.Module):
         return ids
 
 
-    @torch.no_grad()
-    @eval_decorator
-    def edit(self,
-             conds,
-             tokens,
-             m_lens,
-             timesteps: int,
-             cond_scale: int,
-             temperature=1,
-             topk_filter_thres=0.9,
-             gsample=False,
-             force_mask=False,
-             edit_mask=None,
-             padding_mask=None,
-             ):
+    # @torch.no_grad()
+    # @eval_decorator
+    # def edit(self,
+    #          conds,
+    #          tokens,
+    #          m_lens,
+    #          timesteps: int,
+    #          cond_scale: int,
+    #          temperature=1,
+    #          topk_filter_thres=0.9,
+    #          gsample=False,
+    #          force_mask=False,
+    #          edit_mask=None,
+    #          padding_mask=None,
+    #          ):
 
-        assert edit_mask.shape == tokens.shape if edit_mask is not None else True
-        device = next(self.parameters()).device
-        seq_len = tokens.shape[1]
+    #     assert edit_mask.shape == tokens.shape if edit_mask is not None else True
+    #     device = next(self.parameters()).device
+    #     seq_len = tokens.shape[1]
 
-        if self.cond_mode == 'text':
-            with torch.no_grad():
-                cond_vector = self.encode_text(conds)
-        elif self.cond_mode == 'action':
-            cond_vector = self.enc_action(conds).to(device)
-        elif self.cond_mode == 'uncond':
-            cond_vector = torch.zeros(1, self.latent_dim).float().to(device)
-        else:
-            raise NotImplementedError("Unsupported condition mode!!!")
+    #     if self.cond_mode == 'text':
+    #         with torch.no_grad():
+    #             cond_vector = self.encode_text(conds)
+    #     elif self.cond_mode == 'action':
+    #         cond_vector = self.enc_action(conds).to(device)
+    #     elif self.cond_mode == 'uncond':
+    #         cond_vector = torch.zeros(1, self.latent_dim).float().to(device)
+    #     else:
+    #         raise NotImplementedError("Unsupported condition mode!!!")
 
-        if padding_mask == None:
-            padding_mask = ~lengths_to_mask(m_lens, seq_len)
+    #     if padding_mask == None:
+    #         padding_mask = ~lengths_to_mask(m_lens, seq_len)
 
-        # Start from all tokens being masked
-        if edit_mask == None:
-            mask_free = True
-            ids = torch.where(padding_mask, self.pad_id, tokens)
-            edit_mask = torch.ones_like(padding_mask)
-            edit_mask = edit_mask & ~padding_mask
-            edit_len = edit_mask.sum(dim=-1)
-            scores = torch.where(edit_mask, 0., 1e5)
-        else:
-            mask_free = False
-            edit_mask = edit_mask & ~padding_mask
-            edit_len = edit_mask.sum(dim=-1)
-            ids = torch.where(edit_mask, self.mask_id, tokens)
-            scores = torch.where(edit_mask, 0., 1e5)
-        starting_temperature = temperature
+    #     # Start from all tokens being masked
+    #     if edit_mask == None:
+    #         mask_free = True
+    #         ids = torch.where(padding_mask, self.pad_id, tokens)
+    #         edit_mask = torch.ones_like(padding_mask)
+    #         edit_mask = edit_mask & ~padding_mask
+    #         edit_len = edit_mask.sum(dim=-1)
+    #         scores = torch.where(edit_mask, 0., 1e5)
+    #     else:
+    #         mask_free = False
+    #         edit_mask = edit_mask & ~padding_mask
+    #         edit_len = edit_mask.sum(dim=-1)
+    #         ids = torch.where(edit_mask, self.mask_id, tokens)
+    #         scores = torch.where(edit_mask, 0., 1e5)
+    #     starting_temperature = temperature
 
-        for timestep, steps_until_x0 in zip(torch.linspace(0, 1, timesteps, device=device), reversed(range(timesteps))):
-            # 0 < timestep < 1
-            rand_mask_prob = 0.16 if mask_free else self.noise_schedule(timestep)  # Tensor
+    #     for timestep, steps_until_x0 in zip(torch.linspace(0, 1, timesteps, device=device), reversed(range(timesteps))):
+    #         # 0 < timestep < 1
+    #         rand_mask_prob = 0.16 if mask_free else self.noise_schedule(timestep)  # Tensor
 
-            '''
-            Maskout, and cope with variable length
-            '''
-            # fix: the ratio regarding lengths, instead of seq_len
-            num_token_masked = torch.round(rand_mask_prob * edit_len).clamp(min=1)  # (b, )
+    #         '''
+    #         Maskout, and cope with variable length
+    #         '''
+    #         # fix: the ratio regarding lengths, instead of seq_len
+    #         num_token_masked = torch.round(rand_mask_prob * edit_len).clamp(min=1)  # (b, )
 
-            # select num_token_masked tokens with lowest scores to be masked
-            sorted_indices = scores.argsort(
-                dim=1)  # (b, k), sorted_indices[i, j] = the index of j-th lowest element in scores on dim=1
-            ranks = sorted_indices.argsort(dim=1)  # (b, k), rank[i, j] = the rank (0: lowest) of scores[i, j] on dim=1
-            is_mask = (ranks < num_token_masked.unsqueeze(-1))
-            # is_mask = (torch.rand_like(scores) < 0.8) * ~padding_mask if mask_free else is_mask
-            ids = torch.where(is_mask, self.mask_id, ids)
+    #         # select num_token_masked tokens with lowest scores to be masked
+    #         sorted_indices = scores.argsort(
+    #             dim=1)  # (b, k), sorted_indices[i, j] = the index of j-th lowest element in scores on dim=1
+    #         ranks = sorted_indices.argsort(dim=1)  # (b, k), rank[i, j] = the rank (0: lowest) of scores[i, j] on dim=1
+    #         is_mask = (ranks < num_token_masked.unsqueeze(-1))
+    #         # is_mask = (torch.rand_like(scores) < 0.8) * ~padding_mask if mask_free else is_mask
+    #         ids = torch.where(is_mask, self.mask_id, ids)
 
-            '''
-            Preparing input
-            '''
-            # (b, num_token, seqlen)
-            logits = self.forward_with_cond_scale(ids, cond_vector=cond_vector,
-                                                  padding_mask=padding_mask,
-                                                  cond_scale=cond_scale,
-                                                  force_mask=force_mask)
+    #         '''
+    #         Preparing input
+    #         '''
+    #         # (b, num_token, seqlen)
+    #         logits = self.forward_with_cond_scale(ids, cond_vector=cond_vector,
+    #                                               padding_mask=padding_mask,
+    #                                               cond_scale=cond_scale,
+    #                                               force_mask=force_mask)
 
-            logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
-            # print(logits.shape, self.opt.num_tokens)
-            # clean low prob token
-            filtered_logits = top_k(logits, topk_filter_thres, dim=-1)
+    #         logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
+    #         # print(logits.shape, self.opt.num_tokens)
+    #         # clean low prob token
+    #         filtered_logits = top_k(logits, topk_filter_thres, dim=-1)
 
-            '''
-            Update ids
-            '''
-            # if force_mask:
-            temperature = starting_temperature
-            # else:
-            # temperature = starting_temperature * (steps_until_x0 / timesteps)
-            # temperature = max(temperature, 1e-4)
-            # print(filtered_logits.shape)
-            # temperature is annealed, gradually reducing temperature as well as randomness
-            if gsample:  # use gumbel_softmax sampling
-                # print("1111")
-                pred_ids = gumbel_sample(filtered_logits, temperature=temperature, dim=-1)  # (b, seqlen)
-            else:  # use multinomial sampling
-                # print("2222")
-                probs = F.softmax(filtered_logits / temperature, dim=-1)  # (b, seqlen, ntoken)
-                # print(temperature, starting_temperature, steps_until_x0, timesteps)
-                # print(probs / temperature)
-                pred_ids = Categorical(probs).sample()  # (b, seqlen)
+    #         '''
+    #         Update ids
+    #         '''
+    #         # if force_mask:
+    #         temperature = starting_temperature
+    #         # else:
+    #         # temperature = starting_temperature * (steps_until_x0 / timesteps)
+    #         # temperature = max(temperature, 1e-4)
+    #         # print(filtered_logits.shape)
+    #         # temperature is annealed, gradually reducing temperature as well as randomness
+    #         if gsample:  # use gumbel_softmax sampling
+    #             # print("1111")
+    #             pred_ids = gumbel_sample(filtered_logits, temperature=temperature, dim=-1)  # (b, seqlen)
+    #         else:  # use multinomial sampling
+    #             # print("2222")
+    #             probs = F.softmax(filtered_logits / temperature, dim=-1)  # (b, seqlen, ntoken)
+    #             # print(temperature, starting_temperature, steps_until_x0, timesteps)
+    #             # print(probs / temperature)
+    #             pred_ids = Categorical(probs).sample()  # (b, seqlen)
 
-            # print(pred_ids.max(), pred_ids.min())
-            # if pred_ids.
-            ids = torch.where(is_mask, pred_ids, ids)
+    #         # print(pred_ids.max(), pred_ids.min())
+    #         # if pred_ids.
+    #         ids = torch.where(is_mask, pred_ids, ids)
 
-            '''
-            Updating scores
-            '''
-            probs_without_temperature = logits.softmax(dim=-1)  # (b, seqlen, ntoken)
-            scores = probs_without_temperature.gather(2, pred_ids.unsqueeze(dim=-1))  # (b, seqlen, 1)
-            scores = scores.squeeze(-1)  # (b, seqlen)
+    #         '''
+    #         Updating scores
+    #         '''
+    #         probs_without_temperature = logits.softmax(dim=-1)  # (b, seqlen, ntoken)
+    #         scores = probs_without_temperature.gather(2, pred_ids.unsqueeze(dim=-1))  # (b, seqlen, 1)
+    #         scores = scores.squeeze(-1)  # (b, seqlen)
 
-            # We do not want to re-mask the previously kept tokens, or pad tokens
-            scores = scores.masked_fill(~edit_mask, 1e5) if mask_free else scores.masked_fill(~is_mask, 1e5)
+    #         # We do not want to re-mask the previously kept tokens, or pad tokens
+    #         scores = scores.masked_fill(~edit_mask, 1e5) if mask_free else scores.masked_fill(~is_mask, 1e5)
 
-        ids = torch.where(padding_mask, -1, ids)
-        # print("Final", ids.max(), ids.min())
-        return ids
+    #     ids = torch.where(padding_mask, -1, ids)
+    #     # print("Final", ids.max(), ids.min())
+    #     return ids
 
-    @torch.no_grad()
-    @eval_decorator
-    def edit_beta(self,
-                  conds,
-                  conds_og,
-                  tokens,
-                  m_lens,
-                  cond_scale: int,
-                  force_mask=False,
-                  ):
+    # @torch.no_grad()
+    # @eval_decorator
+    # def edit_beta(self,
+    #               conds,
+    #               conds_og,
+    #               tokens,
+    #               m_lens,
+    #               cond_scale: int,
+    #               force_mask=False,
+    #               ):
 
-        device = next(self.parameters()).device
-        seq_len = tokens.shape[1]
+    #     device = next(self.parameters()).device
+    #     seq_len = tokens.shape[1]
 
-        if self.cond_mode == 'text':
-            with torch.no_grad():
-                cond_vector = self.encode_text(conds)
-                if conds_og is not None:
-                    cond_vector_og = self.encode_text(conds_og)
-                else:
-                    cond_vector_og = None
-        elif self.cond_mode == 'action':
-            cond_vector = self.enc_action(conds).to(device)
-            if conds_og is not None:
-                cond_vector_og = self.enc_action(conds_og).to(device)
-            else:
-                cond_vector_og = None
-        else:
-            raise NotImplementedError("Unsupported condition mode!!!")
+    #     if self.cond_mode == 'text':
+    #         with torch.no_grad():
+    #             cond_vector = self.encode_text(conds)
+    #             if conds_og is not None:
+    #                 cond_vector_og = self.encode_text(conds_og)
+    #             else:
+    #                 cond_vector_og = None
+    #     elif self.cond_mode == 'action':
+    #         cond_vector = self.enc_action(conds).to(device)
+    #         if conds_og is not None:
+    #             cond_vector_og = self.enc_action(conds_og).to(device)
+    #         else:
+    #             cond_vector_og = None
+    #     else:
+    #         raise NotImplementedError("Unsupported condition mode!!!")
 
-        padding_mask = ~lengths_to_mask(m_lens, seq_len)
+    #     padding_mask = ~lengths_to_mask(m_lens, seq_len)
 
-        # Start from all tokens being masked
-        ids = torch.where(padding_mask, self.pad_id, tokens)  # Do not mask anything
+    #     # Start from all tokens being masked
+    #     ids = torch.where(padding_mask, self.pad_id, tokens)  # Do not mask anything
 
-        '''
-        Preparing input
-        '''
-        # (b, num_token, seqlen)
-        logits = self.forward_with_cond_scale(ids,
-                                              cond_vector=cond_vector,
-                                              cond_vector_neg=cond_vector_og,
-                                              padding_mask=padding_mask,
-                                              cond_scale=cond_scale,
-                                              force_mask=force_mask)
+    #     '''
+    #     Preparing input
+    #     '''
+    #     # (b, num_token, seqlen)
+    #     logits = self.forward_with_cond_scale(ids,
+    #                                           cond_vector=cond_vector,
+    #                                           cond_vector_neg=cond_vector_og,
+    #                                           padding_mask=padding_mask,
+    #                                           cond_scale=cond_scale,
+    #                                           force_mask=force_mask)
 
-        logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
+    #     logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
 
-        '''
-        Updating scores
-        '''
-        probs_without_temperature = logits.softmax(dim=-1)  # (b, seqlen, ntoken)
-        tokens[tokens == -1] = 0  # just to get through an error when index = -1 using gather
-        og_tokens_scores = probs_without_temperature.gather(2, tokens.unsqueeze(dim=-1))  # (b, seqlen, 1)
-        og_tokens_scores = og_tokens_scores.squeeze(-1)  # (b, seqlen)
+    #     '''
+    #     Updating scores
+    #     '''
+    #     probs_without_temperature = logits.softmax(dim=-1)  # (b, seqlen, ntoken)
+    #     tokens[tokens == -1] = 0  # just to get through an error when index = -1 using gather
+    #     og_tokens_scores = probs_without_temperature.gather(2, tokens.unsqueeze(dim=-1))  # (b, seqlen, 1)
+    #     og_tokens_scores = og_tokens_scores.squeeze(-1)  # (b, seqlen)
 
-        return og_tokens_scores
+    #     return og_tokens_scores
 
 
 class ResidualTransformer(nn.Module):
@@ -786,7 +791,8 @@ class ResidualTransformer(nn.Module):
             raise KeyError("Unsupported condition mode!!!")
 
 
-        _num_tokens = opt.num_tokens + 1  # one dummy tokens for padding
+        _num_tokens = opt.num_tokens +1  # one dummy tokens for padding
+        print(_num_tokens)
         self.pad_id = opt.num_tokens
 
         # self.output_process = OutputProcess_Bert(out_feats=opt.num_tokens, latent_dim=latent_dim)
