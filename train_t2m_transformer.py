@@ -9,7 +9,9 @@ from models.mask_transformer.transformer import MaskTransformer
 # from models.mask_transformer.transformer_copy import MaskTransformer
 
 from models.mask_transformer.transformer_trainer import MaskTransformerTrainer
-from models.vq.model import RVQVAE
+# from models.vq.model import RVQVAE
+from models.vq.model_copy import RVQVAE
+
 
 from options.train_option import TrainT2MOptions
 

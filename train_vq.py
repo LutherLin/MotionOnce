@@ -49,7 +49,7 @@ if __name__ == "__main__":
     # import pdb;pdb.set_trace()
     if opt.dataset_name == "t2m":
         # opt.data_root = '../DATA/HumanML3D/'
-        opt.data_root = '../DATA/humanml3d2/'
+        opt.data_root = '../../DATA/humanml3d2/'
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
         opt.text_dir = pjoin(opt.data_root, 'texts')
         opt.joints_num = 22
@@ -106,7 +106,7 @@ if __name__ == "__main__":
                 opt.vq_norm)
 
     pc_vq = sum(param.numel() for param in net.parameters())
-    print(net)
+    # print(net)
     # print("Total parameters of discriminator net: {}".format(pc_vq))
     # all_params += pc_vq_dis
 

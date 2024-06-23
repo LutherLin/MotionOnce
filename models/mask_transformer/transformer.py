@@ -14,7 +14,7 @@ from functools import partial
 from models.mask_transformer.tools import *
 from torch.distributions.categorical import Categorical
 # from models.x_transformers.x_transformers import ContinuousTransformerWrapper, Encoder
-from x_transformers import ContinuousAutoregressiveWrapper, ContinuousTransformerWrapper, Encoder,Decoder, TransformerWrapper
+# from x_transformers import ContinuousAutoregressiveWrapper, ContinuousTransformerWrapper, Encoder,Decoder, TransformerWrapper
 from models.cross_attention import (SkipTransformerEncoder,
                                     TransformerDecoder,
                                     TransformerDecoderLayer,

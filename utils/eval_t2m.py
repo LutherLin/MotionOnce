@@ -44,7 +44,7 @@ def evaluation_vqvae(out_dir, val_loader, net, writer, ep, best_fid, best_div, b
         # num_joints = 21 if motion.shape[-1] == 251 else 22
 
         # pred_pose_eval = torch.zeros((bs, seq, motion.shape[-1])).cuda()
-
+        # import pdb;pdb.set_trace()
         pred_pose_eval, loss_commit, perplexity = net(motion)
 
         et_pred, em_pred = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, pred_pose_eval,

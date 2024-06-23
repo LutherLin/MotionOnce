@@ -4,10 +4,10 @@ from os.path import join as pjoin
 import torch
 import torch.nn.functional as F
 #!!!!!!!!!!!!!!
-# from models.mask_transformer.transformer_copy import MaskTransformer, ResidualTransformer
-from models.mask_transformer.transformer import MaskTransformer, ResidualTransformer
+from models.mask_transformer.transformer_copy import MaskTransformer, ResidualTransformer
+# from models.mask_transformer.transformer import MaskTransformer, ResidualTransformer
 
-from models.vq.model import RVQVAE, LengthEstimator
+from models.vq.model_copy import RVQVAE, LengthEstimator
 
 from options.eval_option import EvalT2MOptions
 from utils.get_opt import get_opt

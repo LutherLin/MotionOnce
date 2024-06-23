@@ -112,6 +112,7 @@ class RVQTokenizerTrainer:
         while epoch < self.opt.max_epoch:
             self.vq_model.train()
             for i, batch_data in enumerate(train_loader):
+                # import pdb;pdb.set_trace()
                 it += 1
                 if it < self.opt.warm_up_iter:
                     current_lr = self.update_lr_warm_up(it, self.opt.warm_up_iter, self.opt.lr)

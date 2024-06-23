@@ -1,9 +1,10 @@
 import random
-
+import torch
 import torch.nn as nn
 from models.vq.encdec import Encoder, Decoder
-from models.vq.residual_vq import ResidualVQ
-    
+# from models.vq.residual_vq import ResidualVQ
+from models.vector_quantize_pytorch.residual_vq import ResidualVQ, GroupedResidualVQ
+from models.vector_quantize_pytorch.residual_lfq import ResidualLFQ   
 class RVQVAE(nn.Module):
     def __init__(self,
                  args,
@@ -31,13 +32,23 @@ class RVQVAE(nn.Module):
         rvqvae_config = {
             'num_quantizers': args.num_quantizers,
             'shared_codebook': args.shared_codebook,
-            'quantize_dropout_prob': args.quantize_dropout_prob,
+            'quantize_dropout': args.quantize_dropout_prob,
             'quantize_dropout_cutoff_index': 0,
-            'nb_code': nb_code,
-            'code_dim':code_dim, 
-            'args': args,
+            'codebook_size': nb_code,
+            'dim':code_dim,
+ 
+            # 'args': args,
         }
-        self.quantizer = ResidualVQ(**rvqvae_config)
+        print("RVQ!!!!!!!!!!!!!",rvqvae_config)
+        self.quantizer = ResidualVQ(**rvqvae_config,
+                                    stochastic_sample_codes = True,
+                                    sample_codebook_temp = 0.1,         
+                                    # shared_codebook = True              
+                                    )
+        # self.quantizer = ResidualLFQ(**rvqvae_config)
+        # self.quantizer = GroupedResidualVQ(**rvqvae_config,
+        #                                    groups=2,
+        #                                    )
 
     def preprocess(self, x):
         # (bs, T, Jx3) -> (bs, Jx3, T)
@@ -50,11 +61,12 @@ class RVQVAE(nn.Module):
         return x
 
     def encode(self, x):
+        import pdb;pdb.set_trace()
         N, T, _ = x.shape
         x_in = self.preprocess(x)
         x_encoder = self.encoder(x_in)
         # print(x_encoder.shape)
-        code_idx, all_codes = self.quantizer.quantize(x_encoder, return_latent=True)
+        _, code_idx, _,all_codes = self.quantizer(x_encoder, return_all_codes=True)
         # print(code_idx.shape)
         # code_idx = code_idx.view(N, -1)
         # (N, T, Q)
@@ -62,18 +74,26 @@ class RVQVAE(nn.Module):
         return code_idx, all_codes
 
     def forward(self, x):
+        # import pdb;pdb.set_trace()
         x_in = self.preprocess(x)
         # Encode
-        x_encoder = self.encoder(x_in)
+        x_encoder = self.encoder(x_in) #[batch,dim,seq]
 
+        #~~~~~~~~~~~~~~~~~~~``
+        x_encoder = x_encoder.permute(0, 2, 1)
         ## quantization
         # x_quantized, code_idx, commit_loss, perplexity = self.quantizer(x_encoder, sample_codebook_temp=0.5,
         #                                                                 force_dropout_index=0) #TODO hardcode
-        x_quantized, code_idx, commit_loss, perplexity = self.quantizer(x_encoder, sample_codebook_temp=0.5)
+        x_quantized, code_idx, commit_loss = self.quantizer(x_encoder, 
+                                                            # sample_codebook_temp=0.5
+                                                            )
 
+        x_quantized = x_quantized.permute(0, 2, 1)
         # print(code_idx[0, :, 1])
-        ## decoder
+        ## decoders
         x_out = self.decoder(x_quantized)
+        perplexity = torch.tensor(1)
+        commit_loss = torch.mean(commit_loss)
         # x_out = self.postprocess(x_decoder)
         return x_out, commit_loss, perplexity
 
