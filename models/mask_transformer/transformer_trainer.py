@@ -50,14 +50,8 @@ class MaskTransformerTrainer:
         # loss_dict = {}
         # self.pred_ids = []
         # self.acc = []
-        # code_idx0 = code_idx[0]
-        # code_idx1 = code_idx[1]
 
         _loss, _pred_ids, _acc = self.t2m_transformer(code_idx[..., 0], conds, m_lens)
-        # _loss0, _pred_ids0, _acc0 = self.t2m_transformer(code_idx0[..., 0], conds, m_lens)
-        # _loss1, _pred_ids1, _acc1 = self.t2m_transformer(code_idx1[..., 0], conds, m_lens)
-        # _loss = _loss0 + _loss1
-        # _acc = (_acc0 + _acc1) / 2
 
         return _loss, _acc
 
