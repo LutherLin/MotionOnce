@@ -58,6 +58,7 @@ def get_opt(opt_path, device, **kwargs):
     if opt.dataset_name == 't2m':
         # opt.data_root = '../../DATA//HumanML3D/'
         opt.data_root = '../../DATA//humanml3d2/'
+        print("data root:~~~~~~~",opt.data_root)
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
         opt.text_dir = pjoin(opt.data_root, 'texts')
         opt.joints_num = 22

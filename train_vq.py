@@ -4,7 +4,7 @@ from os.path import join as pjoin
 import torch
 from torch.utils.data import DataLoader
 
-from models.vq.model import RVQVAE
+from models.vq.model_copy import RVQVAE
 from models.vq.vq_trainer import RVQTokenizerTrainer
 from options.vq_option import arg_parse
 from data.t2m_dataset import MotionDataset
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         kinematic_chain = paramUtil.t2m_kinematic_chain
         dataset_opt_path = './checkpoints/uni/Comp_v6_KLD005/opt.txt'
     elif opt.dataset_name == "kit":
-        opt.data_root = '../DATA/kitML'
+        opt.data_root = '../../DATA/kitML'
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')
         opt.text_dir = pjoin(opt.data_root, 'texts')
         opt.joints_num = 21

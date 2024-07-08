@@ -30,25 +30,27 @@ class RVQVAE(nn.Module):
         self.decoder = Decoder(input_width, output_emb_width, down_t, stride_t, width, depth,
                                dilation_growth_rate, activation=activation, norm=norm)
         rvqvae_config = {
-            'num_quantizers': args.num_quantizers,
-            'shared_codebook': args.shared_codebook,
+            'num_quantizers': 1, # args.num_quantizers,
+            # 'shared_codebook': args.shared_codebook,
             'quantize_dropout': args.quantize_dropout_prob,
             'quantize_dropout_cutoff_index': 0,
             'codebook_size': nb_code,
             'dim':code_dim,
+            # 'codebook_dim' : 64
  
             # 'args': args,
         }
         print("RVQ!!!!!!!!!!!!!",rvqvae_config)
-        self.quantizer = ResidualVQ(**rvqvae_config,
-                                    stochastic_sample_codes = True,
-                                    sample_codebook_temp = 0.1,         
-                                    # shared_codebook = True              
-                                    )
+        # self.quantizer = ResidualVQ(**rvqvae_config,
+        #                             # use_cosine_sim = True,
+
+        #                             )
         # self.quantizer = ResidualLFQ(**rvqvae_config)
-        # self.quantizer = GroupedResidualVQ(**rvqvae_config,
-        #                                    groups=2,
-        #                                    )
+        self.quantizer = GroupedResidualVQ(**rvqvae_config,
+                                           groups=8,
+                                        #    kmeans_init = True,
+                                        #    kmeans_iters = 10
+                                           )
 
     def preprocess(self, x):
         # (bs, T, Jx3) -> (bs, Jx3, T)
@@ -61,16 +63,20 @@ class RVQVAE(nn.Module):
         return x
 
     def encode(self, x):
-        import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
         N, T, _ = x.shape
         x_in = self.preprocess(x)
         x_encoder = self.encoder(x_in)
+        x_encoder = x_encoder.permute(0, 2, 1)
         # print(x_encoder.shape)
         _, code_idx, _,all_codes = self.quantizer(x_encoder, return_all_codes=True)
         # print(code_idx.shape)
         # code_idx = code_idx.view(N, -1)
         # (N, T, Q)
         # print()
+        # all_codes = all_codes
+        all_codes = torch.cat([all_codes[0],all_codes[1]],dim=3)
+        all_codes = all_codes.permute(1,3,2,0)
         return code_idx, all_codes
 
     def forward(self, x):
@@ -80,7 +86,7 @@ class RVQVAE(nn.Module):
         x_encoder = self.encoder(x_in) #[batch,dim,seq]
 
         #~~~~~~~~~~~~~~~~~~~``
-        x_encoder = x_encoder.permute(0, 2, 1)
+        x_encoder = x_encoder.permute(0, 2, 1) #torch.Size([32, 49, 512])
         ## quantization
         # x_quantized, code_idx, commit_loss, perplexity = self.quantizer(x_encoder, sample_codebook_temp=0.5,
         #                                                                 force_dropout_index=0) #TODO hardcode
@@ -88,7 +94,7 @@ class RVQVAE(nn.Module):
                                                             # sample_codebook_temp=0.5
                                                             )
 
-        x_quantized = x_quantized.permute(0, 2, 1)
+        x_quantized = x_quantized.permute(0, 2, 1) #torch.Size([32, 512, 49])
         # print(code_idx[0, :, 1])
         ## decoders
         x_out = self.decoder(x_quantized)
@@ -98,10 +104,13 @@ class RVQVAE(nn.Module):
         return x_out, commit_loss, perplexity
 
     def forward_decoder(self, x):
-        x_d = self.quantizer.get_codes_from_indices(x)
+        # x = x.permute(0, 2, 1)
+        # import pdb;pdb.set_trace()
+        x_d = self.quantizer.get_codes_from_indices(torch.stack([x,x]))
+        x_d = torch.cat([x_d[0],x_d[1]], dim=3).squeeze(0)
         # x_d = x_d.view(1, -1, self.code_dim).permute(0, 2, 1).contiguous()
         x = x_d.sum(dim=0).permute(0, 2, 1)
-
+        # x = x.permute(1 ,0).unsqueeze(0)
         # decoder
         x_out = self.decoder(x)
         # x_out = self.postprocess(x_decoder)

@@ -345,11 +345,11 @@ class MaskTransformer(nn.Module):
             )
             # output = self.seqTransDecoder(xseq, mask=~padding_mask if padding_mask else None) #(b, seqlen, latent_dim)
             output = self.seqTransDecoder(tgt = xseq, 
-                                          memory = cond,
+                                          memory = xseq,
                                           tgt_mask = tgt_mask,
                                           tgt_key_padding_mask = padding_mask,
-                                        #   memory_key_padding_mask = padding_mask,
-                                        #   memory_mask = tgt_mask,
+                                          memory_key_padding_mask = padding_mask,
+                                          memory_mask = tgt_mask,
                                           ) #( seqlen,b, latent_dim)
         else:
             output = self.seqTransEncoder(xseq, mask=padding_mask) #(b, seqlen+1, latent_dim)
