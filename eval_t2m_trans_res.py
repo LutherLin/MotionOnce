@@ -3,13 +3,16 @@ from os.path import join as pjoin
 
 import torch
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~
-from models.mask_transformer.transformer_copy import ( # MaskTransformer, 
-                                                    ResidualTransformer)
-# from models.mask_transformer.transformer import MaskTransformer, ResidualTransformer
-from models.mask_transformer.transformer import MaskTransformer
+from models.mask_transformer.transformer_copy import ( MaskTransformer, 
+                                                    # ResidualTransformer
+                                                    )
+from models.mask_transformer.transformer import (MaskTransformer, 
+                                                 ResidualTransformer
+                                                 )
+# from models.mask_transformer.transformer import MaskTransformer
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~
-from models.vq.model import RVQVAE
+from models.vq.model_copy import RVQVAE
 
 from options.eval_option import EvalT2MOptions
 from utils.get_opt import get_opt

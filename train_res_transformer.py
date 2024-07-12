@@ -5,11 +5,11 @@ import numpy as np
 from torch.utils.data import DataLoader
 from os.path import join as pjoin
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# from models.mask_transformer.transformer import ResidualTransformer
-from models.mask_transformer.transformer_copy import ResidualTransformer
+from models.mask_transformer.transformer import ResidualTransformer
+# from models.mask_transformer.transformer_copy import ResidualTransformer
 
 from models.mask_transformer.transformer_trainer import ResidualTransformerTrainer
-from models.vq.model import RVQVAE
+from models.vq.model_copy import RVQVAE
 
 from options.train_option import TrainT2MOptions
 

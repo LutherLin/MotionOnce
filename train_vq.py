@@ -4,7 +4,9 @@ from os.path import join as pjoin
 import torch
 from torch.utils.data import DataLoader
 
-from models.vq.model_copy import RVQVAE
+# from models.vq.model_copy import RVQVAE
+from models.vq.model import RVQVAE
+
 from models.vq.vq_trainer import RVQTokenizerTrainer
 from options.vq_option import arg_parse
 from data.t2m_dataset import MotionDataset

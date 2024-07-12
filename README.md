@@ -98,7 +98,7 @@ cp -r ../HumanML3D/HumanML3D ./dataset/HumanML3D
 
 ### (a) Generate from a single prompt
 ```
-python gen_t2m.py --gpu_id 1 --ext exp1 --text_prompt "A person is running on a treadmill."
+python gen_t2m.py --gpu_id 0 --ext sparse2_1 --text_path text.txt --name mtrans_sparse2 --res_name rtrans_tln --repeat_times 1
 ```
 ### (b) Generate from a prompt file
 An example of prompt file is given in `./assets/text_prompt.txt`. Please follow the format of `<text description>#<motion length>` at each line. Motion length indicates the number of poses, which must be integeter and will be rounded by 4. In our work, motion is in 20 fps.
@@ -176,7 +176,7 @@ python train_vq.py --name rvq_name --gpu_id 1 --dataset_name t2m --batch_size 25
 
 ### Train Masked Transformer
 ```
-python train_t2m_transformer.py --name mtrans_name --gpu_id 2 --dataset_name t2m --batch_size 64 --vq_name rvq_name
+python train_t2m_transformer.py --name mtrans_name --gpu_id 2 --dataset_name t2m --batch_size 64 --vq_name rvq_name --use_ar
 ```
 
 ### Train Residual Transformer

@@ -26,7 +26,7 @@ class BaseOptions():
         self.parser.add_argument("--unit_length", type=int, default=4, help="Downscale ratio of VQ")
 
         self.parser.add_argument('--force_mask', action="store_true", help='True: mask out conditions')
-        
+        self.parser.add_argument('--pre_lens', type=int, default=5, help='previous motion lens for prompt')
         self.initialized = True
 
     def parse(self):

@@ -101,10 +101,10 @@ class MaskTransformer(nn.Module):
         self.clip_dim = clip_dim
         self.dropout = dropout
         self.opt = opt
-
         self.cond_mode = cond_mode
         self.cond_drop_prob = cond_drop_prob
         self.use_pos_enc = True
+        print("slidding window!!!!!!",self.opt.pre_lens)
         # ===============1=====================
         # self.seqTransEncoder = Encoder(
         #         dim = self.latent_dim,
@@ -153,29 +153,30 @@ class MaskTransformer(nn.Module):
 
         # ====================3=============================
         if not self.opt.use_ar:
-            seqTransEncoderLayer = TransformerEncoderLayer(
-                d_model = self.latent_dim,
-                nhead= num_heads,
-                dim_feedforward = ff_size,
-                dropout=self.dropout,
-                activation='gelu',
-                # normalize_before=True,
-            )
-            encoder_norm = nn.LayerNorm(self.latent_dim)
-            self.seqTransEncoder = SkipTransformerEncoder(
-                encoder_layer = seqTransEncoderLayer,
-                num_layers = num_layers, 
-                norm = encoder_norm)
+            print("11使用Encoder only！！！！！！！！！！！")
+            # seqTransEncoderLayer = nn.TransformerEncoderLayer(
+            #     d_model = self.latent_dim,
+            #     nhead= num_heads,
+            #     dim_feedforward = ff_size,
+            #     dropout=self.dropout,
+            #     activation='gelu',
+            #     # normalize_before=True,
+            # )
+            # encoder_norm = nn.LayerNorm(self.latent_dim)
+            # self.seqTransEncoder = SkipTransformerEncoder(
+            #     encoder_layer = seqTransEncoderLayer,
+            #     num_layers = num_layers, 
+            #     norm = encoder_norm)
         
         # ======================4============================
-        # seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
-        #                                                   nhead=num_heads,
-        #                                                   dim_feedforward=ff_size,
-        #                                                   dropout=dropout,
-        #                                                   activation='gelu')
+            seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
+                                                            nhead=num_heads,
+                                                            dim_feedforward=ff_size,
+                                                            dropout=dropout,
+                                                            activation='gelu')
 
-        # self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
-        #                                              num_layers=num_layers)
+            self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
+                                                        num_layers=num_layers)
         if self.opt.use_ar:
             print("11使用自回归！！！！！！！！！！！")
             norm_first = False
@@ -297,6 +298,18 @@ class MaskTransformer(nn.Module):
             return cond * (1. - mask)
         else:
             return cond
+    
+    def sparse_attention_mask(self,xseq, k, n):
+        xseq_len = xseq.shape[0]
+        # 创建一个全为True的mask，表示所有位置默认被掩盖
+        mask = torch.ones((xseq_len, xseq_len), dtype=torch.bool, device=xseq.device)
+        
+        # 将主对角线及以下n条对角线设置为False，表示不被掩盖
+        for diag_offset in range(-n, 1):
+            mask.diagonal(diag_offset).fill_(False)
+        mask[:, 0].fill_(False)
+        return mask
+
     def trans_forward(self, motion_ids, cond, padding_mask, force_mask=False,skip_cond = False):
         # import pdb;pdb.set_trace()
         '''
@@ -314,7 +327,8 @@ class MaskTransformer(nn.Module):
         if len(motion_ids):
             x = self.token_emb(motion_ids)# (b, seqlen-1, d) -> (seqlen-1, b, latent_dim)
             x = self.input_process(x)
-
+            # if self.use_pos_enc:
+            #     x = self.position_enc(x)
             # cond = self.cond_emb(cond).unsqueeze(0) #(1, b, latent_dim)
             # if self.use_pos_enc:
             #     x = self.position_enc(x)
@@ -338,11 +352,11 @@ class MaskTransformer(nn.Module):
             xseq = self.position_enc(xseq)
 
         if self.opt.use_ar:
-            xseq_lens = xseq.shape[0]
-            tgt_mask = torch.triu(
-                torch.ones(xseq_lens, xseq_lens, device=xseq.device, dtype=torch.bool),
-                diagonal=1,
-            )
+            # tgt_mask = torch.triu(
+            #     torch.ones(xseq_lens, xseq_lens, device=xseq.device, dtype=torch.bool),
+            #     diagonal=1,
+            # )
+            tgt_mask = self.sparse_attention_mask(xseq, 1, self.opt.pre_lens)
             # output = self.seqTransDecoder(xseq, mask=~padding_mask if padding_mask else None) #(b, seqlen, latent_dim)
             output = self.seqTransDecoder(tgt = xseq, 
                                           memory = xseq,
@@ -352,7 +366,8 @@ class MaskTransformer(nn.Module):
                                           memory_mask = tgt_mask,
                                           ) #( seqlen,b, latent_dim)
         else:
-            output = self.seqTransEncoder(xseq, mask=padding_mask) #(b, seqlen+1, latent_dim)
+            tgt_mask = self.sparse_attention_mask(xseq, 1, self.opt.pre_lens)
+            output = self.seqTransEncoder(xseq, mask = tgt_mask,src_key_padding_mask=padding_mask) #(b, seqlen+1, latent_dim)
 
         # output = output.permute(1,0,2) #(seqlen, b, e)
         # +++++++++++++++++++++++++++++++++++++
@@ -508,6 +523,7 @@ class MaskTransformer(nn.Module):
         # out = torch.full(size = (batch_size, 1), fill_value = self.pad_id,device=device) #(batch , 1)
         out = []
         # print(seq_len)
+        # import pdb;pdb.set_trace()
         for t in range(seq_len):  # 使用t代替lens以避免与len()函数混淆
             x = out
             # 确保至少有一个元素在out中，以避免负索引问题
@@ -524,21 +540,22 @@ class MaskTransformer(nn.Module):
             logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
             # print(logits.shape, self.opt.num_tokens)
             # clean low prob tokenn
-            filtered_logits = top_k(logits, topk_filter_thres, dim=-1)
+            logit = logits[:,-1,:].unsqueeze(1)
+            filtered_logit = top_k(logit, topk_filter_thres, dim=-1)
             temperature = starting_temperature
 
             if gsample:  # use gumbel_softmax sampling
                 # print("1111")
-                pred_ids = gumbel_sample(filtered_logits, temperature=temperature, dim=-1)  # (b, seqlen)
+                pred_id = gumbel_sample(filtered_logit, temperature=temperature, dim=-1)  # (b, seqlen)
             else:  # use multinomial sampling
                 # print("2222")
-                probs = F.softmax(filtered_logits / temperature, dim=-1)  # (b, seqlen, ntoken)
+                prob = F.softmax(filtered_logit / temperature, dim=-1)  # (b, seqlen, ntoken)
 
-                pred_ids = Categorical(probs).sample()  # (b, seqlen)
+                pred_id = Categorical(prob).sample()  # (b, 1)
             if len(out):
-                out = torch.cat((out, pred_ids[:,-1].unsqueeze(1)), dim = 1)
+                out = torch.cat((out,pred_id), dim = 1)
             else:
-                out = pred_ids[:,-1].unsqueeze(1)
+                out = pred_id
         out = out
         # print(out.shape)
 
@@ -547,7 +564,95 @@ class MaskTransformer(nn.Module):
         ids = torch.where(padding_mask, -1, out)
         # print("Final", ids.max(), ids.min())
         return ids
+    @torch.no_grad()
+    @eval_decorator
+    def long_generate(self,
+                 conds,
+                 m_lens,
+                 timesteps: int,
+                 cond_scale: int,
+                 temperature=1,
+                 topk_filter_thres=0.9,
+                 gsample=False,
+                 mids=torch.tensor([]),
+                 force_mask=False
+                 ):
+        # print(self.opt.num_quantizers)
+        # assert len(timesteps) >= len(cond_scales) == self.opt.num_quantizers
+        # import pdb; pdb.set_trace()
+        # mid.shape = (seq_len)
 
+        device = next(self.parameters()).device
+        seq_len = max(m_lens)
+        batch_size = len(m_lens)
+
+        if self.cond_mode == 'text':
+            with torch.no_grad():
+                cond_vector = self.encode_text(conds)
+        elif self.cond_mode == 'action':
+            cond_vector = self.enc_action(conds).to(device)
+        elif self.cond_mode == 'uncond':
+            cond_vector = torch.zeros(batch_size, self.latent_dim).float().to(device)
+        else:
+            raise NotImplementedError("Unsupported condition mode!!!")
+        
+        num_dims = len(cond_vector.shape)
+        
+        assert num_dims >= 2, 'number of dimensions of your start tokens must be greater or equal to 2'
+
+        padding_mask = ~lengths_to_mask(m_lens, seq_len)
+        # Start from all tokens being masked
+        ids = torch.where(padding_mask, self.pad_id, self.pad_id)
+        # 全部用pad_id填充  
+        # ids = torch.where(padding_mask, self.pad_id, self.mask_id)
+        starting_temperature = temperature
+        # import pdb; pdb.set_trace()
+        # out = torch.full(size = (batch_size, 1), fill_value = self.pad_id,device=device) #(batch , 1)
+        out = mids.unsqueeze(0)
+        mids_len = len(mids)
+        # print(seq_len)
+        for t in range(seq_len):  # 使用t代替lens以避免与len()函数混淆
+            x = out
+            # 确保至少有一个元素在out中，以避免负索引问题
+            if t == 0 or len(out) == 0:
+                # padding_mask0 = None # 使用当前时间步t+1（因为索引从0开始）
+                padding_mask0 = torch.zeros_like(padding_mask[:, 0:mids_len])
+            else:
+                padding_mask0 = padding_mask[:, :t]
+                padding_mask0 = torch.cat([torch.zeros_like(padding_mask[:, 0:mids_len]), padding_mask0], dim=1) #(b, seqlen+mids_len)
+            logits = self.forward_with_cond_scale(x, cond_vector=cond_vector,
+                                                    padding_mask=padding_mask0,
+                                                    cond_scale=cond_scale,
+                                                    force_mask=force_mask,
+                                                    skip_cond=True)
+            logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
+            # print(logits.shape, self.opt.num_tokens)
+            # clean low prob tokenn
+            logit = logits[:,-1,:].unsqueeze(1)
+            filtered_logit = top_k(logit, topk_filter_thres, dim=-1)
+            temperature = starting_temperature
+
+            if gsample:  # use gumbel_softmax sampling
+                # print("1111")
+                pred_id = gumbel_sample(filtered_logit, temperature=temperature, dim=-1)  # (b, seqlen)
+            else:  # use multinomial sampling
+                # print("2222")
+                prob = F.softmax(filtered_logit / temperature, dim=-1)  # (b, seqlen, ntoken)
+
+                pred_id = Categorical(prob).sample()  # (b, 1)
+            if len(out):
+                out = torch.cat((out,pred_id), dim = 1)
+            else:
+                print("Errror!!!!!!!!!!!!!!!!!!!!!!!!!")
+                out = pred_id
+        out = out[:,mids_len:]
+        # print(out.shape)
+
+        if num_dims == 2:
+            out = out.squeeze(0)
+        ids = torch.where(padding_mask, -1, out)
+        # print("Final", ids.max(), ids.min())
+        return ids
 
     # @torch.no_grad()
     # @eval_decorator
@@ -732,7 +837,7 @@ class ResidualTransformer(nn.Module):
                  num_heads=4, dropout=0.1, clip_dim=512, shared_codebook=False, share_weight=False,
                  clip_version=None, opt=None, **kargs):
         super(ResidualTransformer, self).__init__()
-        print(f'latent_dim: {latent_dim}, ff_size: {int(np.round(ff_size / latent_dim))*latent_dim}, nlayers: {num_layers}, nheads: {num_heads}, dropout: {dropout}')
+        print(f'latent_dim: {latent_dim}, ff_size: {ff_size}, nlayers: {num_layers}, nheads: {num_heads}, dropout: {dropout}')
 
         # assert shared_codebook == True, "Only support shared codebook right now!"
 
@@ -741,7 +846,7 @@ class ResidualTransformer(nn.Module):
         self.clip_dim = clip_dim
         self.dropout = dropout
         self.opt = opt
-
+        print("slidding window!!!!!!",self.opt.pre_lens)
         self.cond_mode = cond_mode
         # self.cond_drop_prob = cond_drop_prob
 
@@ -756,28 +861,15 @@ class ResidualTransformer(nn.Module):
         self.input_process = InputProcess(self.code_dim, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
 
-        # seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
-        #                                                   nhead=num_heads,
-        #                                                   dim_feedforward=ff_size,
-        #                                                   dropout=dropout,
-        #                                                   activation='gelu')
+        seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
+                                                          nhead=num_heads,
+                                                          dim_feedforward=ff_size,
+                                                          dropout=dropout,
+                                                          activation='gelu')
 
-        # self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
-        #                                              num_layers=num_layers)
-        self.seqTransEncoder = ContinuousTransformerWrapper(
-            dim_in = self.latent_dim, dim_out = self.latent_dim,
-            emb_dropout = self.dropout,
-            max_seq_len = 1024,
-            use_abs_pos_emb = True,
-            attn_layers = Encoder(
-                dim = self.latent_dim,
-                depth = num_layers,
-                heads = num_heads,
-                ff_mult = int(np.round(ff_size / self.latent_dim)), # 2 for MDM hyper params
-                layer_dropout = self.dropout, 
-                cross_attn_tokens_dropout = 0,
-            )
-        )
+        self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
+                                                     num_layers=num_layers)
+
         self.encode_quant = partial(F.one_hot, num_classes=self.opt.num_quantizers)
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
 
@@ -791,8 +883,7 @@ class ResidualTransformer(nn.Module):
             raise KeyError("Unsupported condition mode!!!")
 
 
-        _num_tokens = opt.num_tokens +1  # one dummy tokens for padding
-        print(_num_tokens)
+        _num_tokens = opt.num_tokens + 1  # one dummy tokens for padding
         self.pad_id = opt.num_tokens
 
         # self.output_process = OutputProcess_Bert(out_feats=opt.num_tokens, latent_dim=latent_dim)
@@ -913,7 +1004,17 @@ class ResidualTransformer(nn.Module):
             output += output + output_proj_bias.unsqueeze(-1)
         return output
 
-
+    def sparse_attention_mask(self, xseq, k, n):
+        xseq_len = xseq.shape[0]
+        
+        # 创建上三角和下三角掩码
+        upper_mask = torch.triu(torch.ones((xseq_len, xseq_len), dtype=torch.bool, device=xseq.device), diagonal=n+1)
+        lower_mask = torch.tril(torch.ones((xseq_len, xseq_len), dtype=torch.bool, device=xseq.device), diagonal=-n-1)
+        
+        # 将两个掩码合并，得到最终的mask
+        mask = upper_mask | lower_mask
+        mask[:,:2].fill_(False)
+        return mask
 
     def trans_forward(self, motion_codes, qids, cond, padding_mask, force_mask=False):
         '''
@@ -924,6 +1025,7 @@ class ResidualTransformer(nn.Module):
         :return:
             -logits: (b, num_token, seqlen)
         '''
+        # import pdb;pdb.set_trace()
         cond = self.mask_cond(cond, force_mask=force_mask)
 
         # (b, seqlen, d) -> (seqlen, b, latent_dim)
@@ -937,11 +1039,9 @@ class ResidualTransformer(nn.Module):
 
         x = self.position_enc(x)
         xseq = torch.cat([cond, q_emb, x], dim=0)  # (seqlen+2, b, latent_dim)
-        xseq = xseq.permute(1,0,2)
+        mask = self.sparse_attention_mask(xseq,k=1,n=self.opt.pre_lens)
         padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:2]), padding_mask], dim=1)  # (b, seqlen+2)
-        padding_mask = ~padding_mask #取反很重要
-        output = self.seqTransEncoder(xseq, mask=padding_mask)  # ( b, seqlen,e)
-        output = output.permute(1,0,2)[2:]
+        output = self.seqTransEncoder(xseq,mask = mask, src_key_padding_mask=padding_mask)[2:]  # (seqlen, b, e)
         logits = self.output_process(output)
         return logits
 

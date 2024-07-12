@@ -4,8 +4,8 @@ from os.path import join as pjoin
 import torch
 import torch.nn.functional as F
 #!!!!!!!!!!!!!!
-from models.mask_transformer.transformer_copy import MaskTransformer, ResidualTransformer
-from models.mask_transformer.transformer import MaskTransformer
+# from models.mask_transformer.transformer_copy import MaskTransformer, ResidualTransformer
+from models.mask_transformer.transformer import MaskTransformer,ResidualTransformer
 
 from models.vq.model_copy import RVQVAE, LengthEstimator
 
@@ -221,6 +221,8 @@ if __name__ == '__main__':
     for r in range(opt.repeat_times):
         print("-->Repeat %d"%r)
         with torch.no_grad():
+            # import pdb
+            # pdb.set_trace()
             mids = t2m_transformer.generate(captions, token_lens,
                                             timesteps=opt.time_steps,
                                             cond_scale=opt.cond_scale,
