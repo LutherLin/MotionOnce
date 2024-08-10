@@ -35,5 +35,4 @@ class EvalT2MOptions(BaseOptions):
         self.parser.add_argument('--source_motion', default='example_data/000612.npy', type=str, help="Source motion path for editing. (new_joint_vecs format .npy file)")
         self.parser.add_argument("--motion_length", default=0, type=int,
                                  help="Motion length for generation, only applicable with single text prompt.")
-        self.parser.add_argument('--pre_lens', type=int, default=5, help='previous motion lens for prompt')
         self.is_train = False

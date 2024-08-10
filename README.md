@@ -98,7 +98,7 @@ cp -r ../HumanML3D/HumanML3D ./dataset/HumanML3D
 
 ### (a) Generate from a single prompt
 ```
-python gen_t2m.py --gpu_id 0 --ext sparse2_1 --text_path text.txt --name mtrans_sparse2 --res_name rtrans_tln --repeat_times 1
+python gen_long_t2m.py --gpu_id 0 --ext 0808 --text_path ./assets/dt_text_example.txt --name mtrans_sparse16_e --res_name rtrans_sparse16 --repeat_times 10
 ```
 ### (b) Generate from a prompt file
 An example of prompt file is given in `./assets/text_prompt.txt`. Please follow the format of `<text description>#<motion length>` at each line. Motion length indicates the number of poses, which must be integeter and will be rounded by 4. In our work, motion is in 20 fps.
@@ -106,7 +106,7 @@ An example of prompt file is given in `./assets/text_prompt.txt`. Please follow 
 If you write `<text description>#NA`, our model will determine a length. Note once there is **one** NA, all the others will be **NA** automatically.
 
 ```
-python gen_t2m.py --gpu_id 1 --ext exp2 --text_path ./assets/text_prompt.txt
+python gen_t2m.py --gpu_id 1 --ext exp2 --text_path ./assets/dt_text_example.txt
 ```
 
 

@@ -237,7 +237,7 @@ if __name__ == '__main__':
             pred_motions = pred_motions.detach().cpu().numpy()
 
             data = inv_transform(pred_motions)
-
+        import pdb;pdb.set_trace()
         for k, (caption, joint_data)  in enumerate(zip(captions, data)):
             print("---->Sample %d: %s %d"%(k, caption, m_length[k]))
             animation_path = pjoin(animation_dir, str(k))

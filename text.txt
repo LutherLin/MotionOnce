@@ -1,7 +1,4 @@
-he moves forward.
-then he turns left.
-he shakes his right hand.
-then he jumps back.
-he turns right.
-then he running.
-at the end,he sits down.
+A person is walking along a circular path.
+this person stumbles left and right while moving forward.
+A person is performing a backflip.
+the person uses the left leg to kick something forward.

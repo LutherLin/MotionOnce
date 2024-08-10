@@ -19,6 +19,8 @@ import sys
 def def_value():
     return 0.0
 
+def _loss_fn(x_target, x_pred):
+    return torch.mean(torch.abs(x_pred - x_target)) 
 
 class RVQTokenizerTrainer:
     def __init__(self, args, vq_model):
@@ -36,6 +38,7 @@ class RVQTokenizerTrainer:
         # self.critic = CriticWrapper(self.opt.dataset_name, self.opt.device)
 
     def forward(self, batch_data):
+        # import pdb;pdb.set_trace()
         motions = batch_data.detach().to(self.device).float()
         pred_motion, loss_commit, perplexity = self.vq_model(motions)
         
@@ -46,7 +49,12 @@ class RVQTokenizerTrainer:
         pred_local_pos = pred_motion[..., 4 : (self.opt.joints_num - 1) * 3 + 4]
         local_pos = motions[..., 4 : (self.opt.joints_num - 1) * 3 + 4]
         loss_explicit = self.l1_criterion(pred_local_pos, local_pos)
-        loss = 2*loss_rec + self.opt.loss_vel * loss_explicit + self.opt.commit * loss_commit
+        velocity_loss =  _loss_fn( pred_motion[:, 1:] - pred_motion[:, :-1], motions[:, 1:] - motions[:, :-1])
+        acceleration_loss =  _loss_fn(pred_motion[:, 2:] + pred_motion[:, :-2] - 2 * pred_motion[:, 1:-1], motions[:, 2:] + motions[:, :-2] - 2 * motions[:, 1:-1])
+
+
+
+        loss = 2*loss_rec + self.opt.loss_vel * loss_explicit + self.opt.commit * loss_commit + 2 * (velocity_loss + acceleration_loss)
 
         # return loss, loss_rec, loss_vel, loss_commit, perplexity
         # return loss, loss_rec, loss_percept, loss_commit, perplexity

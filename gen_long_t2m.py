@@ -177,7 +177,7 @@ if __name__ == '__main__':
 
     prompt_list = []
     length_list = []
-
+    # import pdb;pdb.set_trace()
     est_length = False
     if opt.text_prompt != "":
         prompt_list.append(opt.text_prompt)
@@ -189,8 +189,9 @@ if __name__ == '__main__':
         with open(opt.text_path, 'r') as f:
             lines = f.readlines()
             for line in lines:
-                infos = line.split('#')
+                infos = line.strip().split('#')
                 prompt_list.append(infos[0])
+
                 if len(infos) == 1 or (not infos[1].isdigit()):
                     est_length = True
                     length_list = []
@@ -243,8 +244,9 @@ if __name__ == '__main__':
                         padding_tensor = torch.full((1, max_lenss - mids.size(1)), -1,device=mids.device)
                         mids = torch.cat((mids, padding_tensor), dim=1)
                 else:
+                    pre_lens = 4
                     pre_len = token_lens[i-1]
-                    pre_mid = mids[i-1,pre_len-opt.pre_lens:pre_len]
+                    pre_mid = mids[i-1,pre_len-pre_lens:pre_len]
                     mid = t2m_transformer.long_generate(temp_captions, 
                                                         temp_token_lens,
                                                         timesteps=opt.time_steps,
