@@ -20,7 +20,7 @@ from models.cross_attention import (SkipTransformerEncoder,
                                     TransformerDecoderLayer,
                                     TransformerEncoder,
                                     TransformerEncoderLayer)
-
+from collections import OrderedDict
 
 class InputProcess(nn.Module):
     def __init__(self, input_feats, latent_dim):
@@ -30,11 +30,135 @@ class InputProcess(nn.Module):
         self.poseEmbedding = nn.Linear(self.input_feats, self.latent_dim)
 
     def forward(self, x):
+        # import pdb;pdb.set_trace()
         # [bs, ntokens, input_feats]
         x = x.permute((1, 0, 2)) # [seqen, bs, input_feats]
         # print(x.shape)
         x = self.poseEmbedding(x)  # [seqlen, bs, d]
         return x
+
+def clones(module, N):
+    return nn.ModuleList([deepcopy(module) for _ in range(N)])
+
+class Linear(nn.Module):
+    """
+    Linear Module
+    """
+    def __init__(self, in_dim, out_dim, bias=True, w_init='linear'):
+        """
+        :param in_dim: dimension of input
+        :param out_dim: dimension of output
+        :param bias: boolean. if True, bias is included.
+        :param w_init: str. weight inits with xavier initialization.
+        """
+        super(Linear, self).__init__()
+        self.linear_layer = nn.Linear(in_dim, out_dim, bias=bias)
+
+        nn.init.xavier_uniform_(
+            self.linear_layer.weight,
+            gain=nn.init.calculate_gain(w_init))
+
+    def forward(self, x):
+        return self.linear_layer(x)
+
+class Conv(nn.Module):
+    """
+    Convolution Module
+    """
+    def __init__(self, in_channels, out_channels, kernel_size=1, stride=1,
+                 padding=0, dilation=1, bias=True, w_init='linear'):
+        """
+        :param in_channels: dimension of input
+        :param out_channels: dimension of output
+        :param kernel_size: size of kernel
+        :param stride: size of stride
+        :param padding: size of padding
+        :param dilation: dilation rate
+        :param bias: boolean. if True, bias is included.
+        :param w_init: str. weight inits with xavier initialization.
+        """
+        super(Conv, self).__init__()
+
+        self.conv = nn.Conv1d(in_channels, out_channels,
+                              kernel_size=kernel_size, stride=stride,
+                              padding=padding, dilation=dilation,
+                              bias=bias)
+
+        nn.init.xavier_uniform_(
+            self.conv.weight, gain=nn.init.calculate_gain(w_init))
+
+    def forward(self, x):
+        x = self.conv(x)
+        return x
+    
+class Prenet(nn.Module):
+    """
+    Prenet before passing through the network
+    """
+    def __init__(self, input_size, hidden_size, output_size, p=0.5):
+        """
+        :param input_size: dimension of input
+        :param hidden_size: dimension of hidden unit
+        :param output_size: dimension of output
+        """
+        super(Prenet, self).__init__()
+        self.input_size = input_size
+        self.output_size = output_size
+        self.hidden_size = hidden_size
+        self.layer = nn.Sequential(OrderedDict([
+             ('fc1', Linear(self.input_size, self.hidden_size)),
+             ('relu1', nn.ReLU()),
+             ('dropout1', nn.Dropout(p)),
+             ('fc2', Linear(self.hidden_size, self.output_size)),
+             ('relu2', nn.ReLU()),
+             ('dropout2', nn.Dropout(p)),
+        ]))
+
+    def forward(self, input_):
+
+        out = self.layer(input_)
+
+        return out
+
+
+class PostConvNet(nn.Module):
+    """
+    Post Convolutional Network (mel --> mel)
+    """
+    def __init__(self, input_dims, outputs_per_step,num_hidden):
+        """
+        
+        :param num_hidden: dimension of hidden 
+        """
+        super(PostConvNet, self).__init__()
+        self.conv1 = Conv(in_channels=input_dims * outputs_per_step,
+                          out_channels=num_hidden,
+                          kernel_size=5,
+                          padding=4,
+                          w_init='tanh')
+        self.conv_list = clones(Conv(in_channels=num_hidden,
+                                     out_channels=num_hidden,
+                                     kernel_size=5,
+                                     padding=4,
+                                     w_init='tanh'), 3)
+        self.conv2 = Conv(in_channels=num_hidden,
+                          out_channels=input_dims * outputs_per_step,
+                          kernel_size=5,
+                          padding=4)
+
+        self.batch_norm_list = clones(nn.BatchNorm1d(num_hidden), 3)
+        self.pre_batchnorm = nn.BatchNorm1d(num_hidden)
+
+        self.dropout1 = nn.Dropout(p=0.1)
+        self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(3)])
+
+    def forward(self, input_, mask=None):
+        # Causal Convolution (for auto-regressive)
+        input_ = self.dropout1(torch.tanh(self.pre_batchnorm(self.conv1(input_)[:, :, :-4])))
+        for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
+            input_ = dropout(torch.tanh(batch_norm(conv(input_)[:, :, :-4])))
+        input_ = self.conv2(input_)[:, :, :-4]
+        return input_
 
 class PositionalEncoding(nn.Module):
     #Borrow from MDM, the same as above, but add dropout, exponential may improve precision
@@ -90,13 +214,13 @@ class OutputProcess(nn.Module):
 
 
 class MaskTransformer(nn.Module):
-    def __init__(self, code_dim, cond_mode, latent_dim=256, ff_size=1024, num_layers=8,
+    def __init__(self, num_joints, cond_mode, latent_dim=256, ff_size=1024, num_layers=8,
                  num_heads=4, dropout=0.1, clip_dim=512, cond_drop_prob=0.1,
                  clip_version=None, opt=None, **kargs):
         super(MaskTransformer, self).__init__()
         print(f'latent_dim: {latent_dim}, ff_size: {ff_size}, nlayers: {num_layers}, nheads: {num_heads}, dropout: {dropout}')
         self.max_seq_len = 1024
-        self.code_dim = code_dim
+        self.num_joints = num_joints
         self.latent_dim = latent_dim
         self.clip_dim = clip_dim
         self.dropout = dropout
@@ -104,9 +228,10 @@ class MaskTransformer(nn.Module):
         self.cond_mode = cond_mode
         self.cond_drop_prob = cond_drop_prob
         self.use_pos_enc = True
+        self.outputs_per_step = 1
         print("slidding window!!!!!!",self.opt.pre_lens)
 
-        print("11使用自回归-------------------")
+        print("-----------------使用自回归-------------------")
         norm_first = False
         seqTransDecoderLayer = nn.TransformerDecoderLayer(
             d_model=self.latent_dim,
@@ -129,9 +254,13 @@ class MaskTransformer(nn.Module):
         '''
         Preparing Networks
         '''
-        self.input_process = InputProcess(self.code_dim, self.latent_dim)
+        # self.input_process = InputProcess(self.num_joints, self.latent_dim)
+        self.input_process = Prenet(self.num_joints, self.latent_dim * 2 ,self.latent_dim)
+        print("input_process``````````` ",self.num_joints, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
-
+        self.motion_linear = Linear(self.latent_dim, self.num_joints * self.outputs_per_step)
+        self.stop_linear = Linear(self.latent_dim, 1, w_init='sigmoid')
+        self.postconvnet = PostConvNet(input_dims=self.num_joints, outputs_per_step=self.outputs_per_step, num_hidden=latent_dim)
 
 
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
@@ -147,13 +276,12 @@ class MaskTransformer(nn.Module):
             raise KeyError("Unsupported condition mode!!!")
 
 
-        _num_tokens = opt.num_tokens +1  # two dummy tokens, one for masking, one for padding
         # self.mask_id = opt.num_tokens
-        self.pad_id = opt.num_tokens
+        self.pad_id = 0
         print(225,"~~~~~~~~~~~",self.pad_id)
-        self.output_process = OutputProcess_Bert(out_feats=opt.num_tokens, latent_dim=latent_dim)
+        # self.output_process = OutputProcess_Bert(out_feats=opt.num_tokens, latent_dim=latent_dim)
 
-        self.token_emb = nn.Embedding(_num_tokens, self.code_dim)
+        # self.token_emb = nn.Embedding(_num_tokens, self.code_dim)
 
         self.apply(self.__init_weights)
 
@@ -170,18 +298,6 @@ class MaskTransformer(nn.Module):
         if self.use_pos_enc:
             print("~~~~~~~~~~~~~~使用位置编码~~~~~~~~~~~~~~~~~")
 
-    def load_and_freeze_token_emb(self, codebook):
-        '''
-        :param codebook: (c, d)
-        :return:
-        '''
-        assert self.training, 'Only necessary in training mode'
-        c, d = codebook.shape
-        self.token_emb.weight = nn.Parameter(torch.cat([codebook, torch.zeros(size=(2, d), device=codebook.device)], dim=0)) #add two dummy tokens, 0 vectors
-        self.token_emb.requires_grad_(False)
-        # self.token_emb.weight.requires_grad = False
-        # self.token_emb_ready = True
-        print("Token embedding initialized!")
 
     def __init_weights(self, module):
         if isinstance(module, (nn.Linear, nn.Embedding)):
@@ -237,10 +353,10 @@ class MaskTransformer(nn.Module):
         mask[:, 0].fill_(False)
         return mask
 
-    def trans_forward(self, motion_ids, cond, padding_mask, force_mask=False,skip_cond = False):
+    def trans_forward(self, motions, cond, padding_mask, force_mask=False,skip_cond = False):
         # import pdb;pdb.set_trace()
         '''
-        :param motion_ids: (b, seqlen)
+        :param motions: (b, seqlen, num_joints)
         :padding_mask: (b, seqlen), all pad positions are TRUE else FALSE
         :param cond: (b, embed_dim) for text, (b, num_actions) for action
         :param force_mask: boolean
@@ -251,9 +367,9 @@ class MaskTransformer(nn.Module):
         cond = self.cond_emb(cond).unsqueeze(0) #(1, b, latent_dim)
         # print(motion_ids.shape)
         # import pdb; pdb.set_trace()
-        if len(motion_ids):
-            x = self.token_emb(motion_ids)# (b, seqlen-1, d) -> (seqlen-1, b, latent_dim)
-            x = self.input_process(x)
+        if len(motions):
+
+            x = self.input_process(motions)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
  
             xseq = torch.cat([cond, x], dim=0) #(seqlen, b, latent_dim)
 
@@ -276,24 +392,25 @@ class MaskTransformer(nn.Module):
                                         memory_mask = tgt_mask,
                                         ) #( seqlen,b, latent_dim)
 
-        logits = self.output_process(output) #(seqlen, b, e) -> (b, ntoken, seqlen)
+        # logits = self.output_process(output) #(seqlen, b, e) -> (b, ntoken, seqlen)
+        logits = output.permute(1,0,2)
         return logits
 
-    def forward(self, ids, y, m_lens):
+    def forward(self, motions, y, m_lens):
         # import pdb; pdb.set_trace()
         '''
-        :param ids: (b, n)
+        :param motions: (b, n,joints )
         :param y: raw text for cond_mode=text, (b, ) for cond_mode=action
         :m_lens: (b,)
         :return:
         '''
         # import pdb; pdb.set_trace() 
-        bs, ntokens = ids.shape
-        device = ids.device
+        bs, ntokens = motions.shape[0], motions.shape[1]
+        device = motions.device
 
         # Positions that are PADDED are ALL FALSE
         non_pad_mask = lengths_to_mask(m_lens, ntokens) #(b, n)
-        ids = torch.where(non_pad_mask, ids, self.pad_id)
+        # ids = torch.where(non_pad_mask, ids, self.pad_id)
 
         force_mask = False
         if self.cond_mode == 'text':
@@ -324,11 +441,11 @@ class MaskTransformer(nn.Module):
 
         # Note this is our training target, not input
         # labels = torch.where(mask, ids, self.mask_id)
-        x_ids = ids.clone()
+        x_ids = motions.clone()
         # tmp_ids =  torch.where(non_pad_mask, ids, self.mask_id)
         # _, labels = self.pad_y_eos(tmp_ids)
         # x_ids = x_ids[:, :-1]
-        labels = ids.clone()
+        labels = motions.clone()
         # labels = x_ids
         # print(labels.shape)
         x_ids = x_ids[:, :-1]

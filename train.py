@@ -5,17 +5,16 @@ import numpy as np
 from torch.utils.data import DataLoader
 from os.path import join as pjoin
 
-from models.mask_transformer.transformer_copy import MaskTransformer
-# from models.mask_transformer.transformer_copy import MaskTransformer
+from models.mask_transformer.transformer import MaskTransformer
 
-from models.mask_transformer.transformer_trainer_copy import MaskTransformerTrainer
+from models.mask_transformer.transformer_trainer import MaskTransformerTrainer
 
 from models.vq.model_copy import RVQVAE
 
 
 from options.train_option import TrainT2MOptions
 
-from utils.plot_script import plot_3d_motion
+from utils.plot_script0 import plot_3d_motion
 from utils.motion_process import recover_from_ric
 from utils.get_opt import get_opt
 from utils.fixseed import fixseed
@@ -35,29 +34,7 @@ def plot_t2m(data, save_dir, captions, m_lengths):
         joint = recover_from_ric(torch.from_numpy(joint_data).float(), opt.joints_num).numpy()
         save_path = pjoin(save_dir, '%02d.mp4'%i)
         # print(joint.shape)
-        plot_3d_motion(save_path, kinematic_chain, joint, title=caption, fps=fps, radius=radius)
-
-def load_vq_model():
-    opt_path = pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vq_name, 'opt.txt')
-    vq_opt = get_opt(opt_path, opt.device)
-    vq_model = RVQVAE(vq_opt,
-                dim_pose,
-                vq_opt.nb_code,
-                vq_opt.code_dim,
-                vq_opt.output_emb_width,
-                vq_opt.down_t,
-                vq_opt.stride_t,
-                vq_opt.width,
-                vq_opt.depth,
-                vq_opt.dilation_growth_rate,
-                vq_opt.vq_act,
-                vq_opt.vq_norm)
-    ckpt = torch.load(pjoin(vq_opt.checkpoints_dir, vq_opt.dataset_name, vq_opt.name, 'model', 'net_best_fid.tar'),
-                            map_location='cpu')
-    model_key = 'vq_model' if 'vq_model' in ckpt else 'net'
-    vq_model.load_state_dict(ckpt[model_key])
-    print(f'Loading VQ Model {opt.vq_name}')
-    return vq_model, vq_opt
+        plot_3d_motion(save_path, kinematic_chain, joint, title=caption, fps=20)
 
 if __name__ == '__main__':
     parser = TrainT2MOptions()
@@ -105,13 +82,12 @@ if __name__ == '__main__':
 
     opt.text_dir = pjoin(opt.data_root, 'texts')
 
-    vq_model, vq_opt = load_vq_model()
 
     clip_version = 'ViT-B/32'
 
-    opt.num_tokens = vq_opt.nb_code
     # print(opt)
-    t2m_transformer = MaskTransformer(code_dim=vq_opt.code_dim,
+    t2m_transformer = MaskTransformer(
+                                      num_joints=dim_pose, 
                                       cond_mode='text',
                                       latent_dim=opt.latent_dim,
                                       ff_size=opt.ff_size,
@@ -123,8 +99,6 @@ if __name__ == '__main__':
                                       clip_version=clip_version,
                                       opt=opt)
 
-    # if opt.fix_token_emb:
-    #     t2m_transformer.load_and_freeze_token_emb(vq_model.quantizer.codebooks[0])
 
     all_params = 0
     pc_transformer = sum(param.numel() for param in t2m_transformer.parameters_wo_clip())
@@ -143,7 +117,7 @@ if __name__ == '__main__':
 
     train_dataset = Text2MotionDataset(opt, mean, std, train_split_file)
     val_dataset = Text2MotionDataset(opt, mean, std, val_split_file)
-    print(142,opt.batch_size)
+    
     train_loader = DataLoader(train_dataset, batch_size=opt.batch_size, num_workers=16, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=opt.batch_size, num_workers=16, shuffle=True, drop_last=True)
 
@@ -152,6 +126,6 @@ if __name__ == '__main__':
     wrapper_opt = get_opt(dataset_opt_path, torch.device('cuda'))
     eval_wrapper = EvaluatorModelWrapper(wrapper_opt)
 
-    trainer = MaskTransformerTrainer(opt, t2m_transformer, vq_model)
+    trainer = MaskTransformerTrainer(opt, t2m_transformer)
 
     trainer.train(train_loader, val_loader, eval_val_loader, eval_wrapper=eval_wrapper, plot_eval=plot_t2m)

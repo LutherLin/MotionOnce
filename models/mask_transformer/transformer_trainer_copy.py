@@ -6,7 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 from collections import OrderedDict
 from utils.utils import *
 from os.path import join as pjoin
-from utils.eval_t2m import evaluation_mask_transformer, evaluation_res_transformer
+from utils.eval_t2m import evaluation_mask_transformer_plus, evaluation_res_transformer
 from models.mask_transformer.tools import *
 
 from einops import rearrange, repeat
@@ -15,10 +15,12 @@ def def_value():
     return 0.0
 
 class MaskTransformerTrainer:
-    def __init__(self, args, t2m_transformer):
+    def __init__(self, args, t2m_transformer, vq_model):
         self.opt = args
         self.t2m_transformer = t2m_transformer
+        self.vq_model = vq_model
         self.device = args.device
+        self.vq_model.eval()
 
         if args.is_train:
             self.logger = SummaryWriter(args.log_dir)
@@ -40,17 +42,16 @@ class MaskTransformerTrainer:
         m_lens = m_lens.detach().long().to(self.device)
 
         # (b, n, q)
-        # --直接传入motion本身，
-        #!!!!!!!!!!!!!!!!
-        # m_lens = m_lens // 4
+        code_idx, _ = self.vq_model.encode(motion)
+        m_lens = m_lens // 4
 
         conds = conds.to(self.device).float() if torch.is_tensor(conds) else conds
 
         # loss_dict = {}
         # self.pred_ids = []
         # self.acc = []
-        # --motion 【batch, length, 263 joints】
-        _loss, _pred_ids, _acc = self.t2m_transformer(motion, conds, m_lens)
+
+        _loss, _pred_ids, _acc = self.t2m_transformer(code_idx[..., 0], conds, m_lens)
 
         return _loss, _acc
 
@@ -94,7 +95,7 @@ class MaskTransformerTrainer:
 
     def train(self, train_loader, val_loader, eval_val_loader, eval_wrapper, plot_eval):
         self.t2m_transformer.to(self.device)
-        # self.vq_model.to(self.device)
+        self.vq_model.to(self.device)
 
         self.opt_t2m_transformer = optim.AdamW(self.t2m_transformer.parameters(), betas=(0.9, 0.99), lr=self.opt.lr, weight_decay=1e-5)
         self.scheduler = optim.lr_scheduler.MultiStepLR(self.opt_t2m_transformer,
@@ -115,19 +116,18 @@ class MaskTransformerTrainer:
         print('Iters Per Epoch, Training: %04d, Validation: %03d' % (len(train_loader), len(val_loader)))
         logs = defaultdict(def_value, OrderedDict())
 
-        # --这里的evaluation需要改的
-        # --删除vq_model
-        # best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer(
-        #     self.opt.save_root, eval_val_loader, self.t2m_transformer, self.logger, epoch,
-        #     best_fid=100, best_div=100,
-        #     best_top1=0, best_top2=0, best_top3=0,
-        #     best_matching=100, eval_wrapper=eval_wrapper,
-        #     plot_func=plot_eval, save_ckpt=False, save_anim=False
-        # )
-        # best_acc = 0.
+        best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer_plus(
+            self.opt.save_root, eval_val_loader, self.t2m_transformer, self.vq_model, self.logger, epoch,
+            best_fid=100, best_div=100,
+            best_top1=0, best_top2=0, best_top3=0,
+            best_matching=100, eval_wrapper=eval_wrapper,
+            plot_func=plot_eval, save_ckpt=False, save_anim=True
+        )
+        best_acc = 0.
         
         while epoch < self.opt.max_epoch:
             self.t2m_transformer.train()
+            self.vq_model.eval()
 
             for i, batch in enumerate(train_loader):
                 it += 1
@@ -156,6 +156,7 @@ class MaskTransformerTrainer:
             epoch += 1
 
             print('Validation time:')
+            self.vq_model.eval()
             self.t2m_transformer.eval()
 
             val_loss = []
@@ -176,12 +177,12 @@ class MaskTransformerTrainer:
                 self.save(pjoin(self.opt.model_dir, 'net_best_acc.tar'), epoch, it)
                 best_acc = np.mean(val_acc)
 
-            # best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer(
-            #     self.opt.save_root, eval_val_loader, self.t2m_transformer, self.vq_model, self.logger, epoch, best_fid=best_fid,
-            #     best_div=best_div, best_top1=best_top1, best_top2=best_top2, best_top3=best_top3,
-            #     best_matching=best_matching, eval_wrapper=eval_wrapper,
-            #     plot_func=plot_eval, save_ckpt=True, save_anim=(epoch%self.opt.eval_every_e==0)
-            # )
+            best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer_plus(
+                self.opt.save_root, eval_val_loader, self.t2m_transformer, self.vq_model, self.logger, epoch, best_fid=best_fid,
+                best_div=best_div, best_top1=best_top1, best_top2=best_top2, best_top3=best_top3,
+                best_matching=best_matching, eval_wrapper=eval_wrapper,
+                plot_func=plot_eval, save_ckpt=True, save_anim=(epoch%self.opt.eval_every_e==0)
+            )
 
 
 class ResidualTransformerTrainer:
