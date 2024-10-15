@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 import math
 from einops import rearrange
 
@@ -144,6 +145,10 @@ def cal_performance(pred, labels, ignore_index=None, smoothing=0., tk=1):
 
     return loss, pred_id, acc
 
+def cal_new_loss(motion_out, post_out, labels):
+    mel_loss = nn.L1Loss()(motion_out, labels)
+    post_mel_loss = nn.L1Loss()(post_out, labels)
+    return mel_loss, post_mel_loss
 
 def cal_loss(pred, labels, ignore_index=None, smoothing=0.):
     '''Calculate cross entropy loss, apply label smoothing if needed.'''

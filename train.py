@@ -9,8 +9,6 @@ from models.mask_transformer.transformer import MaskTransformer
 
 from models.mask_transformer.transformer_trainer import MaskTransformerTrainer
 
-from models.vq.model_copy import RVQVAE
-
 
 from options.train_option import TrainT2MOptions
 
@@ -109,9 +107,10 @@ if __name__ == '__main__':
 
     print('Total parameters of all models: {:.2f}M'.format(all_params / 1000_000))
 
-    mean = np.load(pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vq_name, 'meta', 'mean.npy'))
-    std = np.load(pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vq_name, 'meta', 'std.npy'))
-
+    # mean = np.load(pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vq_name, 'meta', 'mean.npy'))
+    # std = np.load(pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vq_name, 'meta', 'std.npy'))
+    mean = np.load(pjoin(opt.data_root, 'Mean.npy'))
+    std = np.load(pjoin(opt.data_root, 'Std.npy'))
     train_split_file = pjoin(opt.data_root, 'train.txt')
     val_split_file = pjoin(opt.data_root, 'val.txt')
 

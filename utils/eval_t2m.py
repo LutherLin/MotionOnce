@@ -447,12 +447,12 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, writer, ep, best_fid
 
         bs, seq = pose.shape[:2]
         # num_joints = 21 if pose.shape[-1] == 251 else 22
-
+        # import pdb;pdb.set_trace()
         # (b, seqlen)
-        mids = trans.generate(clip_text, m_length//4, time_steps, cond_scale, temperature=1)
+        mids = trans.generate(clip_text, m_length, time_steps, cond_scale, temperature=1)
 
         # motion_codes = motion_codes.permute(0, 2, 1)
-        mids.unsqueeze_(-1)
+        # mids.unsqueeze_(-1)
         # --直接导出mids
         pred_motions = mids
 

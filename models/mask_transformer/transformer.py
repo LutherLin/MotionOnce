@@ -116,7 +116,8 @@ class Prenet(nn.Module):
 
     def forward(self, input_):
 
-        out = self.layer(input_)
+        input_ = input_.permute(1,0,2)
+        out = self.layer(input_) # [seqlen, bs, d]
 
         return out
 
@@ -361,7 +362,7 @@ class MaskTransformer(nn.Module):
         :param cond: (b, embed_dim) for text, (b, num_actions) for action
         :param force_mask: boolean
         :return:
-            -logits: (b, num_token, seqlen)
+            -logits: (b,  seqlen, dim)
         '''
         cond = self.mask_cond(cond, force_mask=force_mask)
         cond = self.cond_emb(cond).unsqueeze(0) #(1, b, latent_dim)
@@ -370,7 +371,7 @@ class MaskTransformer(nn.Module):
         if len(motions):
 
             x = self.input_process(motions)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
- 
+            
             xseq = torch.cat([cond, x], dim=0) #(seqlen, b, latent_dim)
 
             padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1) #(b, seqlen+1)
@@ -394,7 +395,14 @@ class MaskTransformer(nn.Module):
 
         # logits = self.output_process(output) #(seqlen, b, e) -> (b, ntoken, seqlen)
         logits = output.permute(1,0,2)
-        return logits
+        motion_out = self.motion_linear(logits)
+        postnet_input = motion_out.transpose(1, 2)
+        out = self.postconvnet(postnet_input)
+        out = postnet_input + out
+        out = out.transpose(1, 2)
+
+        stop_tokens = self.stop_linear(logits)
+        return  motion_out, out, stop_tokens
 
     def forward(self, motions, y, m_lens):
         # import pdb; pdb.set_trace()
@@ -451,13 +459,13 @@ class MaskTransformer(nn.Module):
         x_ids = x_ids[:, :-1]
         #====================                ===================
         non_pad_mask = non_pad_mask[:,:x_ids.shape[1]]
-        logits = self.trans_forward(x_ids, cond_vector, ~non_pad_mask, force_mask)
+        motion_out, post_out, stop_tokens = self.trans_forward(x_ids, cond_vector, ~non_pad_mask, force_mask)
         # print(logits.shape)
         # ce_loss, pred_id, acc = cal_performance(logits, labels, ignore_index=self.mask_id)
-        ce_loss, pred_id, acc = cal_performance(logits, labels, ignore_index=self.pad_id)
+        mel_loss, post_mel_loss = cal_new_loss(motion_out,post_out, labels)
 
 
-        return ce_loss, pred_id, acc
+        return mel_loss, labels, post_mel_loss
 
     def forward_with_cond_scale(self,
                                 motion_ids,
@@ -469,13 +477,14 @@ class MaskTransformer(nn.Module):
         # bs = motion_ids.shape[0]
         # if cond_scale == 1:
         if force_mask:
-            return self.trans_forward(motion_ids, cond_vector, padding_mask, force_mask=True, skip_cond=skip_cond)
+            motion_out, logits, _ = self.trans_forward(motion_ids, cond_vector, padding_mask, force_mask=True, skip_cond=skip_cond)
+            return logits
 
-        logits = self.trans_forward(motion_ids, cond_vector, padding_mask, skip_cond=skip_cond)
+        motion_out, logits, _ = self.trans_forward(motion_ids, cond_vector, padding_mask, skip_cond=skip_cond)
         if cond_scale == 1:
             return logits
 
-        aux_logits = self.trans_forward(motion_ids, cond_vector, padding_mask, force_mask=True, skip_cond=skip_cond)
+        motion_out, aux_logits, _ = self.trans_forward(motion_ids, cond_vector, padding_mask, force_mask=True, skip_cond=skip_cond)
 
         scaled_logits = aux_logits + (logits - aux_logits) * cond_scale
         return scaled_logits
@@ -517,9 +526,6 @@ class MaskTransformer(nn.Module):
 
         padding_mask = ~lengths_to_mask(m_lens, seq_len)
         # Start from all tokens being masked
-        ids = torch.where(padding_mask, self.pad_id, self.pad_id)
-        # 全部用pad_id填充  
-        # ids = torch.where(padding_mask, self.pad_id, self.mask_id)
         starting_temperature = temperature
         # import pdb; pdb.set_trace()
         # out = torch.full(size = (batch_size, 1), fill_value = self.pad_id,device=device) #(batch , 1)
@@ -539,33 +545,35 @@ class MaskTransformer(nn.Module):
                                                     cond_scale=cond_scale,
                                                     force_mask=force_mask,
                                                     skip_cond=True)
-            logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
+            # logits = logits.permute(0, 2, 1)  # (b, seqlen, ntoken)
             # print(logits.shape, self.opt.num_tokens)
             # clean low prob tokenn
             logit = logits[:,-1,:].unsqueeze(1)
             filtered_logit = top_k(logit, topk_filter_thres, dim=-1)
             temperature = starting_temperature
 
-            if gsample:  # use gumbel_softmax sampling
-                # print("1111")
-                pred_id = gumbel_sample(filtered_logit, temperature=temperature, dim=-1)  # (b, seqlen)
-            else:  # use multinomial sampling
-                # print("2222")
-                prob = F.softmax(filtered_logit / temperature, dim=-1)  # (b, seqlen, ntoken)
+            # if gsample:  # use gumbel_softmax sampling
+            #     # print("1111")
+            #     pred_id = gumbel_sample(filtered_logit, temperature=temperature, dim=-1)  # (b, seqlen)
+            # else:  # use multinomial sampling
+            #     # print("2222")
+            #     prob = F.softmax(filtered_logit / temperature, dim=-1)  # (b, seqlen, ntoken)
 
-                pred_id = Categorical(prob).sample()  # (b, 1)
+            #     pred_id = Categorical(prob).sample()  # (b, 1)
+            pred_id = logit
             if len(out):
                 out = torch.cat((out,pred_id), dim = 1)
             else:
                 out = pred_id
+        # import pdb;pdb.set_trace()
         out = out
         # print(out.shape)
 
         if num_dims == 2:
             out = out.squeeze(0)
-        ids = torch.where(padding_mask, -1, out)
+        # ids = torch.where(padding_mask, -1, out)
         # print("Final", ids.max(), ids.min())
-        return ids
+        return out
     @torch.no_grad()
     @eval_decorator
     def long_generate(self,

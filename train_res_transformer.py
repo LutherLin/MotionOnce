@@ -13,7 +13,7 @@ from models.vq.model_copy import RVQVAE
 
 from options.train_option import TrainT2MOptions
 
-from utils.plot_script import plot_3d_motion
+from MLLM.MotionOnce.utils.plot_script0 import plot_3d_motion
 from utils.motion_process import recover_from_ric
 from utils.get_opt import get_opt
 from utils.fixseed import fixseed
