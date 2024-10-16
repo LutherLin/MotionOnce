@@ -145,10 +145,32 @@ def cal_performance(pred, labels, ignore_index=None, smoothing=0., tk=1):
 
     return loss, pred_id, acc
 
-def cal_new_loss(motion_out, post_out, labels):
-    mel_loss = nn.L1Loss()(motion_out, labels)
-    post_mel_loss = nn.L1Loss()(post_out, labels)
-    return mel_loss, post_mel_loss
+def create_stop_tokens(m_lens):
+    # 获取 batch size 和 max sequence length
+    batch_size = m_lens.size(0)
+    max_sequence_length = m_lens.max().item()
+    
+    # 创建一个全零的张量
+    mask = torch.zeros(batch_size, max_sequence_length, dtype=torch.float32,device=m_lens.device)
+    
+    # 根据 m_lens 的值填充1
+    for i, length in enumerate(m_lens):
+        if length < max_sequence_length:
+            mask[i, length:] = 1
+    return mask
+
+def cal_new_loss(motion_out, post_out, labels , stop_tokens ,m_lens):
+    mel_lossl1 = nn.L1Loss()(motion_out, labels)
+    mel_lossl2 = nn.MSELoss()(motion_out, labels)
+    mel_loss = mel_lossl1 + mel_lossl2
+    post_mel_lossl1 = nn.L1Loss()(post_out, labels)
+    post_mel_lossl2 = nn.MSELoss()(post_out, labels)
+    post_mel_loss = post_mel_lossl1 + post_mel_lossl2
+
+    stop_label = create_stop_tokens(m_lens=m_lens)
+    bce_loss = nn.BCELoss()(stop_label,stop_tokens)
+    regre_loss = mel_loss + post_mel_loss
+    return regre_loss, bce_loss
 
 def cal_loss(pred, labels, ignore_index=None, smoothing=0.):
     '''Calculate cross entropy loss, apply label smoothing if needed.'''

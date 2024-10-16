@@ -39,18 +39,10 @@ class MaskTransformerTrainer:
         motion = motion.detach().float().to(self.device)
         m_lens = m_lens.detach().long().to(self.device)
 
-        # (b, n, q)
-        # --直接传入motion本身，
-        #!!!!!!!!!!!!!!!!
-        # m_lens = m_lens // 4
 
         conds = conds.to(self.device).float() if torch.is_tensor(conds) else conds
 
-        # loss_dict = {}
-        # self.pred_ids = []
-        # self.acc = []
-        # --motion 【batch, length, 263 joints】
-        _loss, _pred_ids, _acc = self.t2m_transformer(motion, conds, m_lens)
+        _loss, _pred_ids, _acc ,_= self.t2m_transformer(motion, conds, m_lens)
 
         return _loss, _acc
 
@@ -117,7 +109,7 @@ class MaskTransformerTrainer:
 
         # --这里的evaluation需要改的
         # --删除vq_model
-        
+
         best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer(
             self.opt.save_root, eval_val_loader, self.t2m_transformer, self.logger, epoch,
             best_fid=100, best_div=100,
