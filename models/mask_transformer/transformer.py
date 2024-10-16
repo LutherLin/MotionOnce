@@ -233,20 +233,28 @@ class MaskTransformer(nn.Module):
         print("slidding window!!!!!!",self.opt.pre_lens)
 
         print("-----------------使用自回归-------------------")
-        norm_first = False
-        seqTransDecoderLayer = nn.TransformerDecoderLayer(
-            d_model=self.latent_dim,
-            nhead=num_heads,
-            dim_feedforward=ff_size,
-            dropout=dropout,
-            activation='gelu',
-            # norm_first,
-        )
-        self.seqTransDecoder = nn.TransformerDecoder(
-            decoder_layer=seqTransDecoderLayer,
-            num_layers=num_layers,
-            norm=nn.LayerNorm(self.latent_dim) if norm_first else None,
-        )
+        # norm_first = False
+        # seqTransDecoderLayer = nn.TransformerDecoderLayer(
+        #     d_model=self.latent_dim,
+        #     nhead=num_heads,
+        #     dim_feedforward=ff_size,
+        #     dropout=dropout,
+        #     activation='gelu',
+        #     # norm_first,
+        # )
+        # self.seqTransDecoder = nn.TransformerDecoder(
+        #     decoder_layer=seqTransDecoderLayer,
+        #     num_layers=num_layers,
+        #     norm=nn.LayerNorm(self.latent_dim) if norm_first else None,
+        # )
+        seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
+                                                        nhead=num_heads,
+                                                        dim_feedforward=ff_size,
+                                                        dropout=dropout,
+                                                        activation='gelu')
+
+        self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
+                                                    num_layers=num_layers)
         # ================================================
         if self.cond_mode == 'action':
             assert 'num_actions' in kargs
@@ -357,7 +365,7 @@ class MaskTransformer(nn.Module):
     def trans_forward(self, motions, cond, padding_mask, force_mask=False,skip_cond = False):
         # import pdb;pdb.set_trace()
         '''
-        :param motions: (b, seqlen, num_joints)
+        :param motions: (seqlen-1, b, latent_dim)
         :padding_mask: (b, seqlen), all pad positions are TRUE else FALSE
         :param cond: (b, embed_dim) for text, (b, num_actions) for action
         :param force_mask: boolean
@@ -367,42 +375,38 @@ class MaskTransformer(nn.Module):
         cond = self.mask_cond(cond, force_mask=force_mask)
         cond = self.cond_emb(cond).unsqueeze(0) #(1, b, latent_dim)
         # print(motion_ids.shape)
-        # import pdb; pdb.set_trace()
-        if len(motions):
 
-            x = self.input_process(motions)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
-            
-            xseq = torch.cat([cond, x], dim=0) #(seqlen, b, latent_dim)
-
+        t = len(motions)
+        if t:
             padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1) #(b, seqlen+1)
 
-        else:
-            xseq = cond #(1, b, latent_dim)
+        xseq = torch.cat([cond, motions], dim=0)  if t else cond#(seqlen, b, latent_dim)
+
 
         if self.use_pos_enc:
             xseq = self.position_enc(xseq)
 
 
-        tgt_mask = self.sparse_attention_mask(xseq, 1, self.opt.pre_lens)
-        
-        output = self.seqTransDecoder(tgt = xseq, 
-                                        memory = xseq,
-                                        tgt_mask = tgt_mask,
-                                        tgt_key_padding_mask = padding_mask,
-                                        memory_key_padding_mask = padding_mask,
-                                        memory_mask = tgt_mask,
-                                        ) #( seqlen,b, latent_dim)
+        tgt_mask = self.sparse_attention_mask(xseq, 1, 1000)
+        output = self.seqTransEncoder(xseq, mask = tgt_mask,src_key_padding_mask=padding_mask)
+        # output = self.seqTransDecoder(tgt = xseq, 
+        #                                 memory = xseq,
+        #                                 tgt_mask = tgt_mask,
+        #                                 tgt_key_padding_mask = padding_mask,
+        #                                 memory_key_padding_mask = padding_mask,
+        #                                 memory_mask = tgt_mask,
+        #                                 ) #( seqlen,b, latent_dim)
 
         # logits = self.output_process(output) #(seqlen, b, e) -> (b, ntoken, seqlen)
         logits = output.permute(1,0,2)
-        motion_out = self.motion_linear(logits)
-        postnet_input = motion_out.transpose(1, 2)
-        out = self.postconvnet(postnet_input)
-        out = postnet_input + out
-        out = out.transpose(1, 2)
+        # motion_out = self.motion_linear(logits)
+        # postnet_input = motion_out.transpose(1, 2)
+        # out = self.postconvnet(postnet_input)
+        # out = postnet_input + out
+        # out = out.transpose(1, 2)
 
-        stop_tokens = self.stop_linear(logits)
-        return  motion_out, out, stop_tokens
+        # stop_tokens = self.stop_linear(logits)
+        return logits
 
     def forward(self, motions, y, m_lens):
         # import pdb; pdb.set_trace()
@@ -436,19 +440,6 @@ class MaskTransformer(nn.Module):
         '''
         Prepare mask
         '''
-        # rand_time = uniform((bs,), device=device)
-        # rand_mask_probs = self.noise_schedule(rand_time)
-        # num_token_masked = (ntokens * rand_mask_probs).round().clamp(min=1)
-
-        # batch_randperm = torch.rand((bs, ntokens), device=device).argsort(dim=-1)
-        # # Positions to be MASKED are ALL TRUE
-        # mask = batch_randperm < num_token_masked.unsqueeze(-1)
-
-        # # Positions to be MASKED must also be NON-PADDED
-        # mask &= non_pad_mask
-
-        # Note this is our training target, not input
-        # labels = torch.where(mask, ids, self.mask_id)
         x_ids = motions.clone()
         # tmp_ids =  torch.where(non_pad_mask, ids, self.mask_id)
         # _, labels = self.pad_y_eos(tmp_ids)
@@ -459,10 +450,17 @@ class MaskTransformer(nn.Module):
         x_ids = x_ids[:, :-1]
         #====================                ===================
         non_pad_mask = non_pad_mask[:,:x_ids.shape[1]]
-        motion_out, post_out, stop_tokens = self.trans_forward(x_ids, cond_vector, ~non_pad_mask, force_mask)
+
+        motions = self.input_process(x_ids)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
+        logits = self.trans_forward(motions, cond_vector, ~non_pad_mask, force_mask)
         # print(logits.shape)
         # ce_loss, pred_id, acc = cal_performance(logits, labels, ignore_index=self.mask_id)
-        mel_loss, post_mel_loss = cal_new_loss(motion_out,post_out, labels)
+        motion_out = self.motion_linear(logits)
+        postnet_input = motion_out.transpose(1, 2)
+        out = self.postconvnet(postnet_input)
+        out = postnet_input + out
+        out = out.transpose(1, 2)
+        mel_loss, post_mel_loss = cal_new_loss(motion_out, out, labels)
 
 
         return mel_loss, labels, post_mel_loss
@@ -477,17 +475,18 @@ class MaskTransformer(nn.Module):
         # bs = motion_ids.shape[0]
         # if cond_scale == 1:
         if force_mask:
-            motion_out, logits, _ = self.trans_forward(motion_ids, cond_vector, padding_mask, force_mask=True, skip_cond=skip_cond)
+            logits= self.trans_forward(motion_ids, cond_vector, padding_mask, force_mask=True, skip_cond=skip_cond)
             return logits
 
-        motion_out, logits, _ = self.trans_forward(motion_ids, cond_vector, padding_mask, skip_cond=skip_cond)
+        logits= self.trans_forward(motion_ids, cond_vector, padding_mask, skip_cond=skip_cond)
         if cond_scale == 1:
             return logits
 
-        motion_out, aux_logits, _ = self.trans_forward(motion_ids, cond_vector, padding_mask, force_mask=True, skip_cond=skip_cond)
+        # aux_logits = self.trans_forward(motion_ids, cond_vector, padding_mask, force_mask=True, skip_cond=skip_cond)
 
-        scaled_logits = aux_logits + (logits - aux_logits) * cond_scale
-        return scaled_logits
+        # scaled_logits = aux_logits + (logits - aux_logits) * cond_scale
+        # return scaled_logits
+        return logits
 
     @torch.no_grad()
     @eval_decorator
@@ -501,9 +500,7 @@ class MaskTransformer(nn.Module):
                  gsample=False,
                  force_mask=False
                  ):
-        # print(self.opt.num_quantizers)
-        # assert len(timesteps) >= len(cond_scales) == self.opt.num_quantizers
-        # import pdb; pdb.set_trace()
+
         
 
         device = next(self.parameters()).device
@@ -530,8 +527,7 @@ class MaskTransformer(nn.Module):
         # import pdb; pdb.set_trace()
         # out = torch.full(size = (batch_size, 1), fill_value = self.pad_id,device=device) #(batch , 1)
         out = []
-        # print(seq_len)
-        # import pdb;pdb.set_trace()
+
         for t in range(seq_len):  # 使用t代替lens以避免与len()函数混淆
             x = out
             # 确保至少有一个元素在out中，以避免负索引问题
@@ -539,6 +535,7 @@ class MaskTransformer(nn.Module):
                 padding_mask0 = None # 使用当前时间步t+1（因为索引从0开始）
             else:
                 padding_mask0 = padding_mask[:, :t]
+                x = x.permute(1,0,2)
 
             logits = self.forward_with_cond_scale(x, cond_vector=cond_vector,
                                                     padding_mask=padding_mask0,
@@ -549,17 +546,8 @@ class MaskTransformer(nn.Module):
             # print(logits.shape, self.opt.num_tokens)
             # clean low prob tokenn
             logit = logits[:,-1,:].unsqueeze(1)
-            filtered_logit = top_k(logit, topk_filter_thres, dim=-1)
             temperature = starting_temperature
 
-            # if gsample:  # use gumbel_softmax sampling
-            #     # print("1111")
-            #     pred_id = gumbel_sample(filtered_logit, temperature=temperature, dim=-1)  # (b, seqlen)
-            # else:  # use multinomial sampling
-            #     # print("2222")
-            #     prob = F.softmax(filtered_logit / temperature, dim=-1)  # (b, seqlen, ntoken)
-
-            #     pred_id = Categorical(prob).sample()  # (b, 1)
             pred_id = logit
             if len(out):
                 out = torch.cat((out,pred_id), dim = 1)
@@ -573,6 +561,12 @@ class MaskTransformer(nn.Module):
             out = out.squeeze(0)
         # ids = torch.where(padding_mask, -1, out)
         # print("Final", ids.max(), ids.min())
+
+        motion_out = self.motion_linear(out)
+        postnet_input = motion_out.transpose(1, 2)
+        out = self.postconvnet(postnet_input)
+        out = postnet_input + out
+        out = out.transpose(1, 2)
         return out
     @torch.no_grad()
     @eval_decorator
