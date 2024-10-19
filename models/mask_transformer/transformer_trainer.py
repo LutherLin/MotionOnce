@@ -42,19 +42,21 @@ class MaskTransformerTrainer:
 
         conds = conds.to(self.device).float() if torch.is_tensor(conds) else conds
 
-        _loss, _pred_ids, _acc ,_= self.t2m_transformer(motion, conds, m_lens)
+        regre_loss_, bce_loss_, kl_loss_, flux_loss_ ,outputs, stop_tokens = self.t2m_transformer(motion, conds, m_lens)
 
-        return _loss, _acc
+        return regre_loss_, bce_loss_, kl_loss_, flux_loss_
 
-    def update(self, batch_data):
-        motion_loss, post_motion_loss = self.forward(batch_data)
-        loss = motion_loss + post_motion_loss
+    def update(self, iter,batch_data):
+        lamta = 1 if iter>10000 else 0
+        regre_loss, bce_loss, kl_loss, flux_loss = self.forward(batch_data)
+        kl_loss = lamta*kl_loss
+        loss = regre_loss + bce_loss + kl_loss + flux_loss
         self.opt_t2m_transformer.zero_grad()
         loss.backward()
         self.opt_t2m_transformer.step()
         self.scheduler.step()
 
-        return loss.item(), post_motion_loss
+        return loss.item(), regre_loss, bce_loss, kl_loss, flux_loss
 
     def save(self, file_name, ep, total_it):
         t2m_trans_state_dict = self.t2m_transformer.state_dict()
@@ -118,18 +120,21 @@ class MaskTransformerTrainer:
             plot_func=plot_eval, save_ckpt=False, save_anim=False
         )
         best_acc = 100
-        
+        iter_jug = 0
         while epoch < self.opt.max_epoch:
             self.t2m_transformer.train()
-
+            iter_jug = it
             for i, batch in enumerate(train_loader):
                 it += 1
                 if it < self.opt.warm_up_iter:
                     self.update_lr_warm_up(it, self.opt.warm_up_iter, self.opt.lr)
 
-                loss, acc = self.update(batch_data=batch)
+                loss, regre_loss, bce_loss, kl_loss , flux_loss= self.update(iter = iter_jug,batch_data=batch)
                 logs['loss'] += loss
-                logs['post_loss'] += acc
+                logs['regre_loss'] += regre_loss.item()
+                logs['bce_loss'] += bce_loss.item()
+                logs['kl_loss'] += kl_loss.item()
+                logs['flux_loss'] += flux_loss.item()
                 logs['lr'] += self.opt_t2m_transformer.param_groups[0]['lr']
 
                 if it % self.opt.log_every == 0:
@@ -152,31 +157,43 @@ class MaskTransformerTrainer:
             self.t2m_transformer.eval()
 
             val_loss = []
-            val_acc = []
+            val_regres = []
+            val_bce = []
+            val_kl = []
+            val_flux = []
             with torch.no_grad():
                 for i, batch_data in enumerate(val_loader):
-                    motion_loss, post_motion_loss = self.forward(batch_data)
-                    loss = motion_loss + post_motion_loss
+                    regre_loss, bce_loss, kl_loss, flux_loss = self.forward(batch_data)
+                    loss = regre_loss + bce_loss + kl_loss + flux_loss
                     val_loss.append(loss.item())
-                    val_acc.append(post_motion_loss.cpu().numpy())
+                    val_regres.append(regre_loss.item())
+                    val_bce.append(bce_loss.item())
+                    val_kl.append(kl_loss.item())
+                    val_flux.append(flux_loss.item())
 
-            print(f"Validation loss:{np.mean(val_loss):.3f}, post_motion_loss:{np.mean(val_acc):.3f}")
+            print(f"Validation loss:{np.mean(val_loss):.3f}, post_motion_loss:{np.mean(val_regres):.3f}")
 
             self.logger.add_scalar('Val/loss', np.mean(val_loss), epoch)
-            self.logger.add_scalar('Val/post_motion_loss', np.mean(val_acc), epoch)
+            self.logger.add_scalar('Val/regres_loss', np.mean(val_regres), epoch)
+            self.logger.add_scalar('Val/bce_loss', np.mean(val_bce), epoch)
+            self.logger.add_scalar('Val/kl_loss', np.mean(val_kl), epoch)
+            self.logger.add_scalar('Val/flux_loss', np.mean(val_flux), epoch)
 
-            if np.mean(val_acc) < best_acc:
-                print(f"Improved post loss from {best_acc:.02f} to {np.mean(val_acc)}!!!")
+            if np.mean(val_regres) < best_acc:
+                print(f"Improved loss from {best_acc:.02f} to {np.mean(val_regres)}!!!")
                 self.save(pjoin(self.opt.model_dir, 'net_best_acc.tar'), epoch, it)
-                best_acc = np.mean(val_acc)
-            if epoch % 5 == 0:
-                best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer(
-                    self.opt.save_root, eval_val_loader, self.t2m_transformer, self.logger, epoch, 
-                    best_fid=best_fid,best_div=best_div, 
-                    best_top1=best_top1, best_top2=best_top2, best_top3=best_top3,
-                    best_matching=best_matching, eval_wrapper=eval_wrapper,
-                    plot_func=plot_eval, save_ckpt=True, save_anim=(epoch%self.opt.eval_every_e==0)
-                )
+                best_acc = np.mean(val_regres)
+            if epoch % 2 == 0:
+                try:
+                    best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer(
+                        self.opt.save_root, eval_val_loader, self.t2m_transformer, self.logger, epoch, 
+                        best_fid=best_fid,best_div=best_div, 
+                        best_top1=best_top1, best_top2=best_top2, best_top3=best_top3,
+                        best_matching=best_matching, eval_wrapper=eval_wrapper,
+                        plot_func=plot_eval, save_ckpt=True, save_anim=(epoch%self.opt.eval_every_e==0)
+                    )
+                except:
+                    pass
 
 
 class ResidualTransformerTrainer:

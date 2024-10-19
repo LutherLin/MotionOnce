@@ -122,6 +122,8 @@ class Prenet(nn.Module):
         return out
 
 
+
+
 class PostConvNet(nn.Module):
     """
     Post Convolutional Network (mel --> mel)
@@ -214,6 +216,53 @@ class OutputProcess(nn.Module):
         return output
 
 
+class ResidualMLP(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(ResidualMLP, self).__init__()
+        
+        # 定义网络层
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, output_dim)
+    
+    def forward(self, zt):
+        # 前向传播
+        x = F.relu(self.fc1(zt))
+        x = F.relu(self.fc2(x))
+        residual = self.fc3(x)
+        
+        # 残差加回原输入
+        y_prime_t = zt + residual
+        
+        return y_prime_t
+
+class LatentSampling(nn.Module):
+    def __init__(self,input_dim, output_dim):
+        super().__init__()
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        # self.sampling = nn.Linear(self.input_dim, self.output_dim * 2)
+        self.sampling_mean = nn.Linear(self.input_dim, self.output_dim)
+        self.sampling_log_var = nn.Linear(self.input_dim, self.output_dim)
+
+
+        
+        self.residualMLP = ResidualMLP(input_dim=self.output_dim, hidden_dim= self.output_dim*4, output_dim=self.output_dim)
+    def reparameterize(self, mean, log_var):
+        # import pdb;pdb.set_trace()
+        std = torch.exp(0.5 * log_var)
+        eps = torch.randn_like(std)  
+        return mean + eps * std 
+    def forward(self, x):
+        # x = self.sampling(x)
+        # mean = x[..., :self.output_dim]
+        # log_var = x[..., self.output_dim:]
+        mean = self.sampling_mean(x)
+        log_var = self.sampling_log_var(x)
+        Zt = self.reparameterize(mean, log_var)
+        Yt = self.residualMLP(Zt)
+        return mean, log_var, Zt, Yt
+
 class MaskTransformer(nn.Module):
     def __init__(self, num_joints, cond_mode, latent_dim=256, ff_size=1024, num_layers=8,
                  num_heads=4, dropout=0.1, clip_dim=512, cond_drop_prob=0.1,
@@ -229,7 +278,7 @@ class MaskTransformer(nn.Module):
         self.cond_mode = cond_mode
         self.cond_drop_prob = cond_drop_prob
         self.use_pos_enc = True
-        self.outputs_per_step = 1
+        self.outputs_per_step = 4
         print("slidding window!!!!!!",self.opt.pre_lens)
 
         print("-----------------使用自回归-------------------")
@@ -264,14 +313,14 @@ class MaskTransformer(nn.Module):
         Preparing Networks
         '''
         # self.input_process = InputProcess(self.num_joints, self.latent_dim)
-        self.input_process = Prenet(self.num_joints, self.latent_dim * 2 ,self.latent_dim)
+        self.input_process = Prenet(self.num_joints * self.outputs_per_step, self.latent_dim * 2 ,self.latent_dim, 0.5)
         print("input_process``````````` ",self.num_joints, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
-        self.motion_linear = Linear(self.latent_dim, self.num_joints * self.outputs_per_step)
+        # self.motion_linear = Linear(self.latent_dim, self.num_joints * self.outputs_per_step)
         self.stop_linear = Linear(self.latent_dim, self.outputs_per_step, w_init='sigmoid')
         self.postconvnet = PostConvNet(input_dims=self.num_joints, outputs_per_step=self.outputs_per_step, num_hidden=latent_dim)
-
-
+        self.latentsampling = LatentSampling(input_dim=self.latent_dim, output_dim=self.num_joints * self.outputs_per_step )
+        self.norm = Linear(latent_dim, latent_dim)
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
 
         # if self.cond_mode != 'no_cond':
@@ -361,7 +410,24 @@ class MaskTransformer(nn.Module):
             mask.diagonal(diag_offset).fill_(False)
         mask[:, 0].fill_(False)
         return mask
-
+    def generate_autoregressive_mask(self, seq_len, device=None):
+        """
+        生成用于Transformer的自回归掩码。
+        
+        :param seq_len: 序列长度
+        :param device: 设备（如 'cpu' 或 'cuda'）
+        :return: 自回归掩码 (seq_len, seq_len)
+        """
+        # 创建一个全为False的mask
+        mask = torch.triu(torch.ones(seq_len, seq_len, dtype=torch.bool), diagonal=1)
+        
+        # 将上三角部分（包括对角线）设置为True
+        mask = ~mask
+        
+        if device is not None:
+            mask = mask.to(device)
+        
+        return mask
     def trans_forward(self, motions, cond, padding_mask, force_mask=False,skip_cond = False):
         # import pdb;pdb.set_trace()
         '''
@@ -382,16 +448,16 @@ class MaskTransformer(nn.Module):
 
         xseq = torch.cat([cond, motions], dim=0)  if t else cond#(seqlen, b, latent_dim)
 
-
+        xseq = self.norm(xseq)
         if self.use_pos_enc:
             xseq = self.position_enc(xseq)
 
-
-        tgt_mask = self.sparse_attention_mask(xseq, 1, 1000)
-        output = self.seqTransEncoder(xseq, mask = tgt_mask,src_key_padding_mask=padding_mask)
+        tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
+        # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
+        output = self.seqTransEncoder(xseq, mask = ~tgt_mask,src_key_padding_mask=padding_mask)
 
         logits = output.permute(1,0,2)
-
+        # logits = F.softmax(logits, dim=-1)
         return logits
 
     def forward(self, motions, y, m_lens):
@@ -403,11 +469,13 @@ class MaskTransformer(nn.Module):
         :return:
         '''
         # import pdb; pdb.set_trace() 
-        bs, ntokens = motions.shape[0], motions.shape[1]
+        bs, ntokens,joints = motions.shape[0], motions.shape[1],motions.shape[2]
         device = motions.device
+        labels = motions.clone()
 
+        g_motions = motions.view(bs,ntokens//self.outputs_per_step,joints * self.outputs_per_step)
         # Positions that are PADDED are ALL FALSE
-        non_pad_mask = lengths_to_mask(m_lens, ntokens) #(b, n)
+        non_pad_mask = ~lengths_to_mask(m_lens//self.outputs_per_step, ntokens//self.outputs_per_step) #(b, n)
         # ids = torch.where(non_pad_mask, ids, self.pad_id)
 
         force_mask = False
@@ -426,30 +494,43 @@ class MaskTransformer(nn.Module):
         '''
         Prepare mask
         '''
-        x_ids = motions.clone()
+        x_ids = g_motions.clone()
 
-        labels = motions.clone()
+        # labels = motions.clone()
 
 
         x_ids = x_ids[:, :-1]
         #====================                ===================
         non_pad_mask = non_pad_mask[:,:x_ids.shape[1]]
 
-        motions = self.input_process(x_ids)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
-        logits = self.trans_forward(motions, cond_vector, ~non_pad_mask, force_mask)
+        motions_ = self.input_process(x_ids)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
+        logits = self.trans_forward(motions_, cond_vector, non_pad_mask, force_mask)
 
+        # motion_out = self.motion_linear(logits)
+        mean, log_val, Zt, motion_out = self.latentsampling(logits)
 
-        motion_out = self.motion_linear(logits)
         postnet_input = motion_out.transpose(1, 2)
+        
         out = self.postconvnet(postnet_input)
         out = postnet_input + out
         out = out.transpose(1, 2)
+        '''
+        mean 64 49 1052
+        val 64 49 1052
+        motion_out 64 49 1052
+        out 64 49 1052
+        '''
 
         stop_tokens = self.stop_linear(logits).view(logits.size(0), -1)
-        mel_loss, post_mel_loss = cal_new_loss(motion_out, out, labels, stop_tokens,m_lens)
+        # import pdb;pdb.set_trace()
+        # mean = mean.reshape(bs, ntokens,joints)
+        # log_val = log_val.reshape(bs, ntokens,joints)
+        # motion_out = motion_out.reshape(bs, ntokens,joints)
+        labels = labels.reshape(bs,ntokens // self.outputs_per_step,joints * self.outputs_per_step)
+        regre_loss, bce_loss, kl_loss, Flux_loss = cal_new_loss(mean, log_val,motion_out, out, labels, stop_tokens,m_lens)
+        out = out.reshape(bs, ntokens,joints)
 
-
-        return mel_loss, labels, post_mel_loss, stop_tokens
+        return regre_loss, bce_loss, kl_loss, Flux_loss, out, stop_tokens
 
     def forward_with_cond_scale(self,
                                 motion_ids,
@@ -521,7 +602,9 @@ class MaskTransformer(nn.Module):
                 padding_mask0 = None # 使用当前时间步t+1（因为索引从0开始）
             else:
                 padding_mask0 = padding_mask[:, :t]
-                x = x.permute(1,0,2)
+                x = self.input_process(x)
+                # x = x.permute(1,0,2)
+
 
             # logits = self.forward_with_cond_scale(x, cond_vector=cond_vector,
             #                                         padding_mask=padding_mask0,
@@ -530,8 +613,15 @@ class MaskTransformer(nn.Module):
             #                                         skip_cond=True)
 
             logits = self.trans_forward(x, cond_vector, padding_mask0)
-            logit = logits[:,-1,:].unsqueeze(1)
+            # 11111
+            mean, log_val, Zt, motion_out = self.latentsampling(logits)
+            postnet_input = motion_out.transpose(1, 2)
+            output = self.postconvnet(postnet_input)
+            
+            output = postnet_input + output
+            output = output.transpose(1, 2)
 
+            logit = output[:,-1,:].unsqueeze(1)
 
             pred_id = logit
             if len(out):
@@ -546,15 +636,15 @@ class MaskTransformer(nn.Module):
             out = out.squeeze(0)
         # ids = torch.where(padding_mask, -1, out)
         # print("Final", ids.max(), ids.min())
+        # mean, log_val, Zt, motion_out = self.latentsampling(out)
+        # motion_out = self.motion_linear(out)
+        # postnet_input = motion_out.transpose(1, 2)
+        # output = self.postconvnet(postnet_input)
+        # output = postnet_input + output
+        # output = output.transpose(1, 2)
 
-        motion_out = self.motion_linear(out)
-        postnet_input = motion_out.transpose(1, 2)
-        output = self.postconvnet(postnet_input)
-        output = postnet_input + output
-        output = output.transpose(1, 2)
-
-        stop_tokens = self.stop_linear(logits).view(logits.size(0), -1)
-        return output
+        stop_tokens = self.stop_linear(logits).view(out.size(0), -1)
+        return out
     
     @torch.no_grad()
     @eval_decorator

@@ -444,13 +444,14 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, writer, ep, best_fid
         # import pdb;pdb.set_trace()
         word_embeddings, pos_one_hots, clip_text, sent_len, pose, m_length, token = batch
         m_length = m_length.cuda()
-
+        pose = pose.cuda().float()
         bs, seq = pose.shape[:2]
         # num_joints = 21 if pose.shape[-1] == 251 else 22
         # import pdb;pdb.set_trace()
         # (b, seqlen)
-        mids = trans.generate(clip_text, m_length, time_steps, cond_scale, temperature=1)
-
+        mo = pose
+        # mids = trans.generate(clip_text, m_length, time_steps, cond_scale, temperature=1)
+        regre_loss_, bce_loss_, kl_loss_,flux_loss, mids, stop_tokens = trans(mo, clip_text, m_length)
         # motion_codes = motion_codes.permute(0, 2, 1)
         # mids.unsqueeze_(-1)
         # --直接导出mids
@@ -1050,12 +1051,11 @@ def evaluation_mask_transformer_test(val_loader, vq_model, trans, repeat_id, eva
 
 
 @torch.no_grad()
-def evaluation_mask_transformer_test_plus_res(val_loader, vq_model, res_model, trans, repeat_id, eval_wrapper,
+def evaluation_mask_transformer_test_plus_res(val_loader,  trans, repeat_id, eval_wrapper,
                                 time_steps, cond_scale, temperature, topkr, gsample=True, force_mask=False,
                                               cal_mm=True, res_cond_scale=5):
     trans.eval()
-    vq_model.eval()
-    res_model.eval()
+
 
     motion_annotation_list = []
     motion_pred_list = []

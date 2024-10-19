@@ -158,8 +158,26 @@ def create_stop_tokens(m_lens):
         if length < max_sequence_length:
             mask[i, length:] = 1
     return mask
+def kl_divergence(y, mean, log_var):
+    # 将对数方差转换为方差
+    var = torch.exp(log_var)
+    
+    # 计算 KL 散度
+    kl_loss = 0.5 * ((var + (mean - y)**2 - 1) - var.log())  # 注意这里的顺序！
+    
+    # 对所有维度求和
+    kl_loss = kl_loss.sum(dim=-1)  # 在最后一个维度上求和
+    kl_loss = kl_loss.sum(dim=-2)  # 在倒数第二个维度上求和
+    
+    # 平均化损失
+    kl_loss = kl_loss.mean()
+    
+    return kl_loss
 
-def cal_new_loss(motion_out, post_out, labels , stop_tokens ,m_lens):
+def cal_new_loss(mean, log_val,motion_out, post_out, labels , stop_tokens ,m_lens):
+    # import pdb;pdb.set_trace()
+    kl_loss = 0.1 * kl_divergence(motion_out, mean, log_val)
+
     mel_lossl1 = nn.L1Loss()(motion_out, labels)
     mel_lossl2 = nn.MSELoss()(motion_out, labels)
     mel_loss = mel_lossl1 + mel_lossl2
@@ -167,10 +185,15 @@ def cal_new_loss(motion_out, post_out, labels , stop_tokens ,m_lens):
     post_mel_lossl2 = nn.MSELoss()(post_out, labels)
     post_mel_loss = post_mel_lossl1 + post_mel_lossl2
 
-    stop_label = create_stop_tokens(m_lens=m_lens)
-    bce_loss = nn.BCELoss()(stop_label,stop_tokens)
+    stop_label = create_stop_tokens(m_lens=m_lens).detach()
+    stop_tokens = stop_tokens.to(dtype=torch.float32)
+    bce_loss = nn.BCEWithLogitsLoss()(stop_tokens, stop_label)
+
     regre_loss = mel_loss + post_mel_loss
-    return regre_loss, bce_loss
+
+    Flux_loss = 0.1 * nn.L1Loss()(mean[:,1:,:], labels[:,:-1,:])
+    # regre_loss = regre_loss + Flux_loss
+    return regre_loss, bce_loss, kl_loss, Flux_loss
 
 def cal_loss(pred, labels, ignore_index=None, smoothing=0.):
     '''Calculate cross entropy loss, apply label smoothing if needed.'''
