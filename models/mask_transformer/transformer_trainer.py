@@ -47,7 +47,7 @@ class MaskTransformerTrainer:
         return regre_loss_, bce_loss_, kl_loss_, flux_loss_
 
     def update(self, iter,batch_data):
-        lamta = 1 if iter>10000 else 0
+        lamta = iter
         regre_loss, bce_loss, kl_loss, flux_loss = self.forward(batch_data)
         kl_loss = lamta*kl_loss
         loss = regre_loss + bce_loss + kl_loss + flux_loss
@@ -123,7 +123,8 @@ class MaskTransformerTrainer:
         iter_jug = 0
         while epoch < self.opt.max_epoch:
             self.t2m_transformer.train()
-            iter_jug = it
+            if it > 5000:
+                iter_jug = 1
             for i, batch in enumerate(train_loader):
                 it += 1
                 if it < self.opt.warm_up_iter:

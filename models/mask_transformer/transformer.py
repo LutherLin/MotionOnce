@@ -320,7 +320,8 @@ class MaskTransformer(nn.Module):
         self.stop_linear = Linear(self.latent_dim, self.outputs_per_step, w_init='sigmoid')
         self.postconvnet = PostConvNet(input_dims=self.num_joints, outputs_per_step=self.outputs_per_step, num_hidden=latent_dim)
         self.latentsampling = LatentSampling(input_dim=self.latent_dim, output_dim=self.num_joints * self.outputs_per_step )
-        self.norm = Linear(latent_dim, latent_dim)
+        # self.norm = Linear(latent_dim, latent_dim)
+        # self.out_norm = Linear(latent_dim,self.num_joints * self.outputs_per_step)
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
 
         # if self.cond_mode != 'no_cond':
@@ -448,7 +449,7 @@ class MaskTransformer(nn.Module):
 
         xseq = torch.cat([cond, motions], dim=0)  if t else cond#(seqlen, b, latent_dim)
 
-        xseq = self.norm(xseq)
+        # xseq = self.norm(xseq)
         if self.use_pos_enc:
             xseq = self.position_enc(xseq)
 
@@ -505,7 +506,8 @@ class MaskTransformer(nn.Module):
 
         motions_ = self.input_process(x_ids)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
         logits = self.trans_forward(motions_, cond_vector, non_pad_mask, force_mask)
-
+        # 111
+        # log = self.out_norm(logits)
         # motion_out = self.motion_linear(logits)
         mean, log_val, Zt, motion_out = self.latentsampling(logits)
 
@@ -588,22 +590,22 @@ class MaskTransformer(nn.Module):
         
         assert num_dims >= 2, 'number of dimensions of your start tokens must be greater or equal to 2'
 
-        padding_mask = ~lengths_to_mask(m_lens, seq_len)
+        padding_mask = ~lengths_to_mask(m_lens//self.outputs_per_step, seq_len//self.outputs_per_step)
         # Start from all tokens being masked
 
         # import pdb; pdb.set_trace()
         # out = torch.full(size = (batch_size, 1), fill_value = self.pad_id,device=device) #(batch , 1)
         out = []
 
-        for t in range(seq_len):  # 使用t代替lens以避免与len()函数混淆
+        for t in range(seq_len//self.outputs_per_step):  # 使用t代替lens以避免与len()函数混淆
             x = out
             # 确保至少有一个元素在out中，以避免负索引问题
             if t == 0 or len(out) == 0:
                 padding_mask0 = None # 使用当前时间步t+1（因为索引从0开始）
             else:
                 padding_mask0 = padding_mask[:, :t]
-                x = self.input_process(x)
-                # x = x.permute(1,0,2)
+                # x = self.input_process(x)
+                x = x.permute(1,0,2)
 
 
             # logits = self.forward_with_cond_scale(x, cond_vector=cond_vector,
@@ -614,14 +616,9 @@ class MaskTransformer(nn.Module):
 
             logits = self.trans_forward(x, cond_vector, padding_mask0)
             # 11111
-            mean, log_val, Zt, motion_out = self.latentsampling(logits)
-            postnet_input = motion_out.transpose(1, 2)
-            output = self.postconvnet(postnet_input)
-            
-            output = postnet_input + output
-            output = output.transpose(1, 2)
 
-            logit = output[:,-1,:].unsqueeze(1)
+
+            logit = logits[:,-1,:].unsqueeze(1)
 
             pred_id = logit
             if len(out):
@@ -642,9 +639,15 @@ class MaskTransformer(nn.Module):
         # output = self.postconvnet(postnet_input)
         # output = postnet_input + output
         # output = output.transpose(1, 2)
-
+        mean, log_val, Zt, motion_out = self.latentsampling(out)
+        postnet_input = motion_out.transpose(1, 2)
+        output = self.postconvnet(postnet_input)
+        
+        output = postnet_input + output
+        output = output.transpose(1, 2)
         stop_tokens = self.stop_linear(logits).view(out.size(0), -1)
-        return out
+        output = output.reshape(batch_size,seq_len,self.num_joints)
+        return output
     
     @torch.no_grad()
     @eval_decorator
