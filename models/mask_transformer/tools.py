@@ -163,7 +163,7 @@ def kl_divergence(y, mean, log_var):
     var = log_var.exp()
     
     # 计算 KL 散度
-    kl_loss = 0.5 * ((var + (mean - y)**2 - 1) - log_var)  # 注意这里的顺序！
+    kl_loss = 0.5 * ((var + (mean - y)**2 - 1) - log_var)  # 
     
     # 对所有维度求和
     kl_loss = kl_loss.sum(dim=-1)  # 在最后一个维度上求和
@@ -176,13 +176,12 @@ def kl_divergence(y, mean, log_var):
 
 def cal_new_loss(mean, log_var,motion_out, post_out, labels , stop_tokens ,m_lens):
     # import pdb;pdb.set_trace()
-    kl_loss = 0.1 * kl_divergence(labels, mean, log_var)
-
-    mel_lossl1 = nn.L1Loss()(motion_out, labels)
-    mel_lossl2 = nn.MSELoss()(motion_out, labels)
+    kl_loss = 1e-5 * kl_divergence(labels, mean, log_var)
+    mel_lossl1 = F.smooth_l1_loss(motion_out, labels)
+    mel_lossl2 = F.mse_loss(motion_out, labels)
     mel_loss = mel_lossl1 + mel_lossl2
-    post_mel_lossl1 = nn.L1Loss()(post_out, labels)
-    post_mel_lossl2 = nn.MSELoss()(post_out, labels)
+    post_mel_lossl1 = F.smooth_l1_loss(post_out, labels)
+    post_mel_lossl2 = F.mse_loss(post_out, labels)
     post_mel_loss = post_mel_lossl1 + post_mel_lossl2
 
     stop_label = create_stop_tokens(m_lens=m_lens).detach()
