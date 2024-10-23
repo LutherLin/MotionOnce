@@ -160,11 +160,10 @@ def create_stop_tokens(m_lens):
     return mask
 def kl_divergence(y, mean, log_var):
     # 将对数方差转换为方差
-    epsilon = 1e-10
-    var = torch.exp(log_var + epsilon)
+    var = log_var.exp()
     
     # 计算 KL 散度
-    kl_loss = 0.5 * ((var + (mean - y)**2 - 1) - var.log())  # 注意这里的顺序！
+    kl_loss = 0.5 * ((var + (mean - y)**2 - 1) - log_var)  # 注意这里的顺序！
     
     # 对所有维度求和
     kl_loss = kl_loss.sum(dim=-1)  # 在最后一个维度上求和
@@ -175,9 +174,9 @@ def kl_divergence(y, mean, log_var):
     
     return kl_loss
 
-def cal_new_loss(mean, log_val,motion_out, post_out, labels , stop_tokens ,m_lens):
+def cal_new_loss(mean, log_var,motion_out, post_out, labels , stop_tokens ,m_lens):
     # import pdb;pdb.set_trace()
-    kl_loss = 0.1 * kl_divergence(labels, mean, log_val)
+    kl_loss = 0.1 * kl_divergence(labels, mean, log_var)
 
     mel_lossl1 = nn.L1Loss()(motion_out, labels)
     mel_lossl2 = nn.MSELoss()(motion_out, labels)

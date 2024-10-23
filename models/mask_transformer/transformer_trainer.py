@@ -184,7 +184,7 @@ class MaskTransformerTrainer:
                 print(f"Improved loss from {best_acc:.02f} to {np.mean(val_regres)}!!!")
                 self.save(pjoin(self.opt.model_dir, 'net_best_acc.tar'), epoch, it)
                 best_acc = np.mean(val_regres)
-            if epoch % 2 == 0:
+            if epoch % 1 == 0:
                 try:
                     best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer(
                         self.opt.save_root, eval_val_loader, self.t2m_transformer, self.logger, epoch, 

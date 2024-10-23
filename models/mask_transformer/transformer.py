@@ -237,29 +237,42 @@ class ResidualMLP(nn.Module):
         return y_prime_t
 
 class LatentSampling(nn.Module):
-    def __init__(self,input_dim, output_dim):
+    def __init__(self,input_dim, output_dim, max_lens = 196//4):
         super().__init__()
+        # output_dim 1052
+        # input_dim 1024
         self.input_dim = input_dim
         self.output_dim = output_dim
-        # self.sampling = nn.Linear(self.input_dim, self.output_dim * 2)
-        self.sampling_mean = nn.Linear(self.input_dim, self.output_dim)
-        self.sampling_log_var = nn.Linear(self.input_dim, self.output_dim)
+        self.max_lens = max_lens
+        self.sampling = nn.Linear(self.input_dim, self.output_dim * 2)
+        # self.sampling_mean = nn.Linear(self.input_dim, self.output_dim)
+        # self.sampling_log_var = nn.Linear(self.input_dim, self.output_dim)
 
 
         
-        self.residualMLP = ResidualMLP(input_dim=self.output_dim, hidden_dim= self.output_dim*4, output_dim=self.output_dim)
+        self.residualMLP = ResidualMLP(input_dim=self.output_dim, hidden_dim= self.output_dim*2, output_dim=self.output_dim)
     def reparameterize(self, mean, log_var):
         # import pdb;pdb.set_trace()
         std = torch.exp(0.5 * log_var)
         eps = torch.randn_like(std)  
         return mean + eps * std 
     def forward(self, x):
-        # x = self.sampling(x)
-        # mean = x[..., :self.output_dim]
-        # log_var = x[..., self.output_dim:]
-        mean = self.sampling_mean(x)
-        log_var = self.sampling_log_var(x)
-        Zt = self.reparameterize(mean, log_var)
+        '''
+        x: [bs, nframes, dim]
+        '''
+        # device = x.device
+        # bs, nframes, nfeats = x.shape
+        # x = x.permute(1, 0, 2) # now [nframes,bs, dim]
+        x = self.sampling(x)
+        # dist = torch.tile(self.global_motion_token[:, None, :], (1, bs, 1))
+
+        mean = x[..., :self.output_dim]
+        log_var = x[..., self.output_dim:]
+        # resampling
+        std = log_var.exp().pow(0.5)
+        dist = torch.distributions.Normal(mean, std)
+        Zt = dist.rsample()
+        # Zt = self.reparameterize(mean, log_var)
         Yt = self.residualMLP(Zt)
         return mean, log_var, Zt, Yt
 
@@ -313,13 +326,13 @@ class MaskTransformer(nn.Module):
         Preparing Networks
         '''
         # self.input_process = InputProcess(self.num_joints, self.latent_dim)
-        self.input_process = Prenet(self.num_joints * self.outputs_per_step, self.latent_dim * 2 ,self.latent_dim, 0.5)
+        self.input_process = Prenet(self.num_joints * self.outputs_per_step, self.latent_dim * 4 ,self.latent_dim, 0.5)
         print("input_process``````````` ",self.num_joints, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
         # self.motion_linear = Linear(self.latent_dim, self.num_joints * self.outputs_per_step)
         self.stop_linear = Linear(self.latent_dim, self.outputs_per_step, w_init='sigmoid')
         self.postconvnet = PostConvNet(input_dims=self.num_joints, outputs_per_step=self.outputs_per_step, num_hidden=latent_dim)
-        self.latentsampling = LatentSampling(input_dim=self.latent_dim, output_dim=self.num_joints * self.outputs_per_step )
+        self.latentsampling = LatentSampling(input_dim=self.latent_dim, output_dim=self.num_joints * self.outputs_per_step,max_lens=196//self.outputs_per_step )
         # self.norm = Linear(latent_dim, latent_dim)
         # self.out_norm = Linear(latent_dim,self.num_joints * self.outputs_per_step)
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
@@ -509,8 +522,10 @@ class MaskTransformer(nn.Module):
         # 111
         # log = self.out_norm(logits)
         # motion_out = self.motion_linear(logits)
-        mean, log_val, Zt, motion_out = self.latentsampling(logits)
-
+        mean, log_var, Zt, motion_out = self.latentsampling(logits)
+        # motion_out -> y'
+        # Zt -> z_t
+        # out -> y''
         postnet_input = motion_out.transpose(1, 2)
         
         out = self.postconvnet(postnet_input)
@@ -529,7 +544,7 @@ class MaskTransformer(nn.Module):
         # log_val = log_val.reshape(bs, ntokens,joints)
         # motion_out = motion_out.reshape(bs, ntokens,joints)
         labels = labels.reshape(bs,ntokens // self.outputs_per_step,joints * self.outputs_per_step)
-        regre_loss, bce_loss, kl_loss, Flux_loss = cal_new_loss(mean, log_val,motion_out, out, labels, stop_tokens,m_lens)
+        regre_loss, bce_loss, kl_loss, Flux_loss = cal_new_loss(mean, log_var,motion_out, out, labels, stop_tokens,m_lens)
         out = out.reshape(bs, ntokens,joints)
 
         return regre_loss, bce_loss, kl_loss, Flux_loss, out, stop_tokens
@@ -604,8 +619,8 @@ class MaskTransformer(nn.Module):
                 padding_mask0 = None # 使用当前时间步t+1（因为索引从0开始）
             else:
                 padding_mask0 = padding_mask[:, :t]
-                # x = self.input_process(x)
-                x = x.permute(1,0,2)
+                x = self.input_process(x)
+                # x = x.permute(1,0,2)
 
 
             # logits = self.forward_with_cond_scale(x, cond_vector=cond_vector,
@@ -616,9 +631,14 @@ class MaskTransformer(nn.Module):
 
             logits = self.trans_forward(x, cond_vector, padding_mask0)
             # 11111
+            mean, log_val, Zt, motion_out = self.latentsampling(logits)
+            postnet_input = motion_out.transpose(1, 2)
+            output = self.postconvnet(postnet_input)
+            
+            output = postnet_input + output
+            output = output.transpose(1, 2)
 
-
-            logit = logits[:,-1,:].unsqueeze(1)
+            logit = output[:,-1,:].unsqueeze(1)
 
             pred_id = logit
             if len(out):
@@ -639,15 +659,10 @@ class MaskTransformer(nn.Module):
         # output = self.postconvnet(postnet_input)
         # output = postnet_input + output
         # output = output.transpose(1, 2)
-        mean, log_val, Zt, motion_out = self.latentsampling(out)
-        postnet_input = motion_out.transpose(1, 2)
-        output = self.postconvnet(postnet_input)
-        
-        output = postnet_input + output
-        output = output.transpose(1, 2)
+
         stop_tokens = self.stop_linear(logits).view(out.size(0), -1)
-        output = output.reshape(batch_size,seq_len,self.num_joints)
-        return output
+        output_ = out.reshape(batch_size,seq_len,self.num_joints)
+        return output_
     
     @torch.no_grad()
     @eval_decorator
