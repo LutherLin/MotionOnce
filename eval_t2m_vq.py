@@ -48,7 +48,7 @@ if __name__ == "__main__":
     f = open(pjoin(args.out_dir, '%s.log'%args.ext), 'w')
 
     dataset_opt_path = 'checkpoints/kit/Comp_v6_KLD005/opt.txt' if args.dataset_name == 'kit' \
-                                                        else 'checkpoints/t2m/Comp_v6_KLD005/opt.txt'
+                                                        else 'checkpoints/t2m/Comp_v6_KLD01/opt.txt'
 
     wrapper_opt = get_opt(dataset_opt_path, torch.device('cuda'))
     eval_wrapper = EvaluatorModelWrapper(wrapper_opt)

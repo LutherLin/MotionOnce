@@ -450,7 +450,7 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, writer, ep, best_fid
         # import pdb;pdb.set_trace()
         # (b, seqlen)
         mo = pose
-        # mids = trans.generate(clip_text, m_length, time_steps, cond_scale, temperature=1)
+        #mids = trans.generate(clip_text, m_length, time_steps, cond_scale, temperature=1)
         regre_loss_, bce_loss_, kl_loss_,flux_loss, mids, stop_tokens = trans(mo, clip_text, m_length)
         # motion_codes = motion_codes.permute(0, 2, 1)
         # mids.unsqueeze_(-1)

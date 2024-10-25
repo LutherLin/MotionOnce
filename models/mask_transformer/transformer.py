@@ -309,6 +309,7 @@ class MaskTransformer(nn.Module):
         #     num_layers=num_layers,
         #     norm=nn.LayerNorm(self.latent_dim) if norm_first else None,
         # )
+        self.norm = nn.LayerNorm(self.latent_dim)
         seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
                                                         nhead=num_heads,
                                                         dim_feedforward=ff_size,
@@ -316,7 +317,8 @@ class MaskTransformer(nn.Module):
                                                         activation='gelu')
 
         self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
-                                                    num_layers=num_layers)
+                                                    num_layers=num_layers,
+                                                    norm=self.norm)
         # ================================================
         if self.cond_mode == 'action':
             assert 'num_actions' in kargs
@@ -329,12 +331,11 @@ class MaskTransformer(nn.Module):
         self.input_process = Prenet(self.num_joints * self.outputs_per_step, self.latent_dim * 4 ,self.latent_dim, 0.5)
         print("input_process``````````` ",self.num_joints, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
-        # self.motion_linear = Linear(self.latent_dim, self.num_joints * self.outputs_per_step)
+        # self.decoder_pos_embed_learned = nn.Parameter(torch.zeros(1, self.seq_len + self.buffer_size, decoder_embed_dim))
         self.stop_linear = Linear(self.latent_dim, self.outputs_per_step, w_init='sigmoid')
         self.postconvnet = PostConvNet(input_dims=self.num_joints, outputs_per_step=self.outputs_per_step, num_hidden=latent_dim)
         self.latentsampling = LatentSampling(input_dim=self.latent_dim, output_dim=self.num_joints * self.outputs_per_step,max_lens=196//self.outputs_per_step )
-        # self.norm = Linear(latent_dim, latent_dim)
-        # self.out_norm = Linear(latent_dim,self.num_joints * self.outputs_per_step)
+
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
 
         # if self.cond_mode != 'no_cond':
@@ -462,7 +463,7 @@ class MaskTransformer(nn.Module):
 
         xseq = torch.cat([cond, motions], dim=0)  if t else cond#(seqlen, b, latent_dim)
 
-        # xseq = self.norm(xseq)
+
         if self.use_pos_enc:
             xseq = self.position_enc(xseq)
 
@@ -471,7 +472,7 @@ class MaskTransformer(nn.Module):
         output = self.seqTransEncoder(xseq, mask = ~tgt_mask,src_key_padding_mask=padding_mask)
 
         logits = output.permute(1,0,2)
-        # logits = F.softmax(logits, dim=-1)
+
         return logits
 
     def forward(self, motions, y, m_lens):

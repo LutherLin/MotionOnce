@@ -132,7 +132,7 @@ if __name__ == '__main__':
     assert res_opt.vq_name == model_opt.vq_name
 
     dataset_opt_path = 'checkpoints/kit/Comp_v6_KLD005/opt.txt' if opt.dataset_name == 'kit' \
-        else 'checkpoints/t2m/Comp_v6_KLD005/opt.txt'
+        else 'checkpoints/t2m/Comp_v6_KLD01/opt.txt'
 
     wrapper_opt = get_opt(dataset_opt_path, torch.device('cuda'))
     eval_wrapper = EvaluatorModelWrapper(wrapper_opt)

@@ -109,8 +109,6 @@ class MaskTransformerTrainer:
         print('Iters Per Epoch, Training: %04d, Validation: %03d' % (len(train_loader), len(val_loader)))
         logs = defaultdict(def_value, OrderedDict())
 
-        # --这里的evaluation需要改的
-        # --删除vq_model
 
         best_fid, best_div, best_top1, best_top2, best_top3, best_matching, writer = evaluation_mask_transformer(
             self.opt.save_root, eval_val_loader, self.t2m_transformer, self.logger, epoch,
@@ -123,7 +121,7 @@ class MaskTransformerTrainer:
         iter_jug = 0
         while epoch < self.opt.max_epoch:
             self.t2m_transformer.train()
-            if it > 5000:
+            if it > -1:
                 iter_jug = 1
             for i, batch in enumerate(train_loader):
                 it += 1

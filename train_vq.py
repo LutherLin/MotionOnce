@@ -59,7 +59,7 @@ if __name__ == "__main__":
         fps = 20
         radius = 4
         kinematic_chain = paramUtil.t2m_kinematic_chain
-        dataset_opt_path = './checkpoints/t2m/Comp_v6_KLD005/opt.txt'
+        dataset_opt_path = './checkpoints/t2m/Comp_v6_KLD01/opt.txt'
     elif opt.dataset_name == "uni":
         opt.data_root = '../DATA/body-only-unimocap/UniMocap/'
         opt.motion_dir = pjoin(opt.data_root, 'new_joint_vecs')

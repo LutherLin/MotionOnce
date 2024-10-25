@@ -86,7 +86,7 @@ if __name__ == '__main__':
         radius = 4
         fps = 20
         kinematic_chain = t2m_kinematic_chain
-        dataset_opt_path = './checkpoints/t2m/Comp_v6_KLD005/opt.txt'
+        dataset_opt_path = './checkpoints/t2m/Comp_v6_KLD01/opt.txt'
 
     elif opt.dataset_name == 'kit': #TODO
         opt.data_root = '../../DATA/kitML'
