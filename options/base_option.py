@@ -16,7 +16,7 @@ class BaseOptions():
         self.parser.add_argument('--dataset_name', type=str, default='t2m', help='Dataset Name, {t2m} for humanml3d, {kit} for kit-ml')
         self.parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here.')
 
-        self.parser.add_argument('--latent_dim', type=int, default=1024, help='Dimension of transformer latent.')
+        self.parser.add_argument('--latent_dim', type=int, default=512, help='Dimension of transformer latent.')
         self.parser.add_argument('--n_heads', type=int, default=8, help='Number of heads.')
         self.parser.add_argument('--n_layers', type=int, default=8, help='Number of attention layers.')
         self.parser.add_argument('--ff_size', type=int, default=1024*4, help='FF_Size')

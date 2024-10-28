@@ -310,6 +310,8 @@ class MaskTransformer(nn.Module):
         #     norm=nn.LayerNorm(self.latent_dim) if norm_first else None,
         # )
         self.norm = nn.LayerNorm(self.latent_dim)
+        self.norm_first = nn.LayerNorm(self.latent_dim)
+
         seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
                                                         nhead=num_heads,
                                                         dim_feedforward=ff_size,
@@ -469,6 +471,7 @@ class MaskTransformer(nn.Module):
 
         tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
         # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
+        xseq = self.norm_first(xseq)
         output = self.seqTransEncoder(xseq, mask = ~tgt_mask,src_key_padding_mask=padding_mask)
 
         logits = output.permute(1,0,2)

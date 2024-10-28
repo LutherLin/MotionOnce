@@ -120,6 +120,8 @@ class MaskTransformerTrainer:
         best_acc = 100
         iter_jug = 0
         while epoch < self.opt.max_epoch:
+            # if epoch >5:
+            #     break
             self.t2m_transformer.train()
             if it > -1:
                 iter_jug = 1

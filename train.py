@@ -109,10 +109,10 @@ if __name__ == '__main__':
 
     # mean = np.load(pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vq_name, 'meta', 'mean.npy'))
     # std = np.load(pjoin(opt.checkpoints_dir, opt.dataset_name, opt.vq_name, 'meta', 'std.npy'))
-    mean = np.load(pjoin(opt.data_root, 'Mean.npy'))
-    # mean = np.load('./checkpoints/t2m/Comp_v6_KLD005/meta/mean.npy')
-    std = np.load(pjoin(opt.data_root, 'Std.npy'))
-    # std = np.load('./checkpoints/t2m/Comp_v6_KLD005/meta/std.npy')
+    # mean = np.load(pjoin(opt.data_root, 'Mean.npy'))
+    mean = np.load('./checkpoints/t2m/Comp_v6_KLD01/meta/mean.npy')
+    # std = np.load(pjoin(opt.data_root, 'Std.npy'))
+    std = np.load('./checkpoints/t2m/Comp_v6_KLD01/meta/std.npy')
     train_split_file = pjoin(opt.data_root, 'train.txt')
     val_split_file = pjoin(opt.data_root, 'val.txt')
 
