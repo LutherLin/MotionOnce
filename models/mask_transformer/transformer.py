@@ -474,12 +474,36 @@ class MaskTransformer(nn.Module):
         tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
         # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
         # xseq = self.norm_first(xseq)
-        output = self.seqTransEncoder(xseq, mask = ~tgt_mask,src_key_padding_mask=padding_mask)
+        output = self.seqTransEncoder(xseq, mask = ~tgt_mask)
         output = self.output_process(output)
         logits = output.permute(1,0,2)
 
         return logits
+    
 
+    def output_forawrd(self,logits):
+        
+        '''
+            :logits: (b, frames //4 ,joints *4 )
+        
+        :return:
+
+        mean 64 49 1052
+        val 64 49 1052
+        motion_out 64 49 1052
+        out 64 49 1052
+        '''
+  
+        mean, log_var, Zt, motion_out = self.latentsampling(logits)  
+
+        postnet_input = motion_out.transpose(1, 2)
+        
+        out = self.postconvnet(postnet_input)
+        out = postnet_input + out
+        out = out.transpose(1, 2)
+
+        stop_tokens = self.stop_linear(logits).view(logits.size(0), -1)
+        return mean, log_var, motion_out, out, stop_tokens
     def forward(self, motions, y, m_lens):
         # import pdb; pdb.set_trace()
         '''
@@ -528,29 +552,12 @@ class MaskTransformer(nn.Module):
         # 111
         # log = self.out_norm(logits)
         # motion_out = self.motion_linear(logits)
-        mean, log_var, Zt, motion_out = self.latentsampling(logits)
-        # motion_out -> y'
-        # Zt -> z_t
-        # out -> y''
-        postnet_input = motion_out.transpose(1, 2)
-        
-        out = self.postconvnet(postnet_input)
-        out = postnet_input + out
-        out = out.transpose(1, 2)
-        '''
-        mean 64 49 1052
-        val 64 49 1052
-        motion_out 64 49 1052
-        out 64 49 1052
-        '''
+        mean, log_var, motion_out, out, stop_tokens = self.output_forawrd(logits)
 
-        stop_tokens = self.stop_linear(logits).view(logits.size(0), -1)
-        # import pdb;pdb.set_trace()
-        # mean = mean.reshape(bs, ntokens,joints)
-        # log_val = log_val.reshape(bs, ntokens,joints)
-        # motion_out = motion_out.reshape(bs, ntokens,joints)
+
         labels = labels.reshape(bs,ntokens // self.outputs_per_step,joints * self.outputs_per_step)
         regre_loss, bce_loss, kl_loss, Flux_loss = cal_new_loss(mean, log_var,motion_out, out, labels, stop_tokens,m_lens)
+        
         out = out.reshape(bs, ntokens,joints)
 
         return regre_loss, bce_loss, kl_loss, Flux_loss, out, stop_tokens
@@ -628,23 +635,11 @@ class MaskTransformer(nn.Module):
                 x = self.input_process(x)
                 # x = x.permute(1,0,2)
 
-
-            # logits = self.forward_with_cond_scale(x, cond_vector=cond_vector,
-            #                                         padding_mask=padding_mask0,
-            #                                         cond_scale=cond_scale,
-            #                                         force_mask=force_mask,
-            #                                         skip_cond=True)
-
             logits = self.trans_forward(x, cond_vector, padding_mask0)
             # 11111
-            mean, log_val, Zt, motion_out = self.latentsampling(logits)
-            postnet_input = motion_out.transpose(1, 2)
-            output = self.postconvnet(postnet_input)
-            
-            output = postnet_input + output
-            output = output.transpose(1, 2)
+            mean, log_var, motion_out, out_, stop_tokens = self.output_forawrd(logits)
 
-            logit = output[:,-1,:].unsqueeze(1)
+            logit = out_[:,-1,:].unsqueeze(1)
 
             pred_id = logit
             if len(out):
@@ -666,7 +661,6 @@ class MaskTransformer(nn.Module):
         # output = postnet_input + output
         # output = output.transpose(1, 2)
 
-        stop_tokens = self.stop_linear(logits).view(out.size(0), -1)
         output_ = out.reshape(batch_size,seq_len,self.num_joints)
         return output_
     
