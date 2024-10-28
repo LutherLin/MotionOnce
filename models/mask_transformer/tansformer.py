@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 # from networks.layers import *
 import torch.nn.functional as F
+import scipy.stats as stats
 import clip
 from einops import rearrange, repeat
 import math
@@ -292,6 +293,7 @@ class MaskTransformer(nn.Module):
         self.cond_drop_prob = cond_drop_prob
         self.use_pos_enc = True
         self.outputs_per_step = 4
+        self.mask_ratio_min = 0.7
         print("slidding window!!!!!!",self.opt.pre_lens)
 
         print("-----------------使用自回归-------------------")
@@ -311,6 +313,7 @@ class MaskTransformer(nn.Module):
         # )
         self.norm = nn.LayerNorm(self.latent_dim)
         self.norm_first = nn.LayerNorm(self.latent_dim)
+        self.mask_ratio_generator = stats.truncnorm((self.mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
         self.output_process = OutputProcess(out_feats=self.num_joints * self.outputs_per_step,latent_dim=self.latent_dim)
         seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
                                                         nhead=num_heads,
@@ -447,7 +450,27 @@ class MaskTransformer(nn.Module):
             mask = mask.to(device)
         
         return mask
-    def trans_forward(self, motions, cond, padding_mask, force_mask=False,skip_cond = False):
+    def sample_orders(self, bsz):
+        # generate a batch of random generation orders
+        orders = []
+        for _ in range(bsz):
+            order = np.array(list(range(196 // self.outputs_per_step)))
+            np.random.shuffle(order)
+            orders.append(order)
+        orders = torch.Tensor(np.array(orders)).cuda().long()
+        return orders
+
+    def random_masking(self, x, orders):
+        # generate token mask
+        bsz, seq_len, embed_dim = x.shape
+        mask_rate = self.mask_ratio_generator.rvs(1)[0]
+        num_masked_tokens = int(np.ceil(seq_len * mask_rate))
+        mask = torch.zeros(bsz, seq_len, device=x.device)
+        mask = torch.scatter(mask, dim=-1, index=orders[:, :num_masked_tokens],
+                             src=torch.ones(bsz, seq_len, device=x.device))
+        return mask
+    
+    def trans_forward(self, motions, cond, padding_mask, force_mask=False,skip_cond = False,mask = None):
         # import pdb;pdb.set_trace()
         '''
         :param motions: (seqlen-1, b, latent_dim)
@@ -464,6 +487,7 @@ class MaskTransformer(nn.Module):
         t = len(motions)
         if t:
             padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1) #(b, seqlen+1)
+            mask = torch.cat([torch.zeros_like(mask[:, 0:1]), mask], dim=1) #(b, seqlen+1)
 
         xseq = torch.cat([cond, motions], dim=0)  if t else cond#(seqlen, b, latent_dim)
 
@@ -471,10 +495,9 @@ class MaskTransformer(nn.Module):
         if self.use_pos_enc:
             xseq = self.position_enc(xseq)
 
-        tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
         # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
         # xseq = self.norm_first(xseq)
-        output = self.seqTransEncoder(xseq, mask = ~tgt_mask,src_key_padding_mask=padding_mask)
+        output = self.seqTransEncoder(xseq,tgt_mask = mask,src_key_padding_mask=padding_mask)
         output = self.output_process(output)
         logits = output.permute(1,0,2)
 
@@ -524,7 +547,11 @@ class MaskTransformer(nn.Module):
         non_pad_mask = non_pad_mask[:,:x_ids.shape[1]]
 
         motions_ = self.input_process(x_ids)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
-        logits = self.trans_forward(motions_, cond_vector, non_pad_mask, force_mask)
+        # add mask
+        orders = self.sample_orders(bsz=bs)
+        mask = self.random_masking(motions_.permute(1,0,2), orders)        
+        
+        logits = self.trans_forward(motions_, cond_vector, non_pad_mask, force_mask,mask=mask)
         # 111
         # log = self.out_norm(logits)
         # motion_out = self.motion_linear(logits)
