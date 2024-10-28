@@ -3,5 +3,5 @@ checkpoints
 editing
 generation
 checkpoings.zip
-log/
+./log/*
 
