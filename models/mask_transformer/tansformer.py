@@ -469,10 +469,10 @@ class MaskTransformer(nn.Module):
         if self.use_pos_enc:
             xseq = self.position_enc(xseq)
 
-        tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
-        # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
+        # tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
+        # # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
         xseq = self.norm_first(xseq)
-        output = self.seqTransEncoder(xseq, mask = ~tgt_mask,src_key_padding_mask=padding_mask)
+        output = self.seqTransEncoder(xseq,src_key_padding_mask=padding_mask)
 
         logits = output.permute(1,0,2)
 
