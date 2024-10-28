@@ -212,7 +212,7 @@ class OutputProcess(nn.Module):
         hidden_states = self.transform_act_fn(hidden_states)
         hidden_states = self.LayerNorm(hidden_states)
         output = self.poseFinal(hidden_states)  # [seqlen, bs, out_feats]
-        output = output.permute(1, 2, 0)  # [bs, e, seqlen]
+        # output = output.permute(1, 2, 0)  # [bs, e, seqlen]
         return output
 
 
@@ -311,7 +311,7 @@ class MaskTransformer(nn.Module):
         # )
         self.norm = nn.LayerNorm(self.latent_dim)
         self.norm_first = nn.LayerNorm(self.latent_dim)
-
+        self.output_process = OutputProcess(out_feats=self.num_joints * self.outputs_per_step,latent_dim=self.latent_dim)
         seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
                                                         nhead=num_heads,
                                                         dim_feedforward=ff_size,
@@ -334,9 +334,11 @@ class MaskTransformer(nn.Module):
         print("input_process``````````` ",self.num_joints, self.latent_dim)
         self.position_enc = PositionalEncoding(self.latent_dim, self.dropout)
         # self.decoder_pos_embed_learned = nn.Parameter(torch.zeros(1, self.seq_len + self.buffer_size, decoder_embed_dim))
-        self.stop_linear = Linear(self.latent_dim, self.outputs_per_step, w_init='sigmoid')
+        # self.stop_linear = Linear(self.latent_dim, self.outputs_per_step, w_init='sigmoid')
+        self.stop_linear = Linear(self.num_joints * self.outputs_per_step, self.outputs_per_step, w_init='sigmoid')
+        
         self.postconvnet = PostConvNet(input_dims=self.num_joints, outputs_per_step=self.outputs_per_step, num_hidden=latent_dim)
-        self.latentsampling = LatentSampling(input_dim=self.latent_dim, output_dim=self.num_joints * self.outputs_per_step,max_lens=196//self.outputs_per_step )
+        self.latentsampling = LatentSampling(input_dim=self.num_joints * self.outputs_per_step, output_dim=self.num_joints * self.outputs_per_step,max_lens=196//self.outputs_per_step )
 
         self.encode_action = partial(F.one_hot, num_classes=self.num_actions)
 
@@ -471,9 +473,9 @@ class MaskTransformer(nn.Module):
 
         tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
         # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
-        xseq = self.norm_first(xseq)
+        # xseq = self.norm_first(xseq)
         output = self.seqTransEncoder(xseq, mask = ~tgt_mask,src_key_padding_mask=padding_mask)
-
+        output = self.output_process(output)
         logits = output.permute(1,0,2)
 
         return logits
