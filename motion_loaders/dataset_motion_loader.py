@@ -11,13 +11,15 @@ def get_dataset_motion_loader(opt_path, batch_size, fname, device):
     # Configurations of T2M dataset and KIT dataset is almost the same
     if opt.dataset_name == 't2m' or opt.dataset_name == 'kit' or opt.dataset_name == 'uni':
         print('Loading dataset %s ...' % opt.dataset_name)
-
+        dataset_mean = np.load(pjoin(opt.data_root, 'Mean.npy'))
+    # mean = np.load('./checkpoints/t2m/Comp_v6_KLD01/meta/mean.npy')
+        dataset_std = np.load(pjoin(opt.data_root, 'Std.npy'))
         mean = np.load(pjoin(opt.meta_dir, 'mean.npy'))
         std = np.load(pjoin(opt.meta_dir, 'std.npy'))
 
         w_vectorizer = WordVectorizer('./glove', 'our_vab')
         split_file = pjoin(opt.data_root, '%s.txt'%fname)
-        dataset = Text2MotionDatasetEval(opt, mean, std, split_file, w_vectorizer)
+        dataset = Text2MotionDatasetEval(opt, mean, std, split_file, w_vectorizer,dataset_mean,dataset_std)
         dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=4, drop_last=True,
                                 collate_fn=collate_fn, shuffle=True)
     else:
