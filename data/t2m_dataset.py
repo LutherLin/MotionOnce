@@ -88,7 +88,7 @@ class MotionDataset(data.Dataset):
 
 
 class Text2MotionDatasetEval(data.Dataset):
-    def __init__(self, opt, mean, std, split_file, w_vectorizer):
+    def __init__(self, opt, mean, std, split_file, w_vectorizer,dataset_mean,dataset_std):
         self.opt = opt
         self.w_vectorizer = w_vectorizer
         self.max_length = 20
@@ -161,6 +161,8 @@ class Text2MotionDatasetEval(data.Dataset):
 
         self.mean = mean
         self.std = std
+        self.dataset_mean = dataset_mean
+        self.dataset_std = dataset_std
         self.length_arr = np.array(length_list)
         self.data_dict = data_dict
         self.name_list = name_list
@@ -171,6 +173,16 @@ class Text2MotionDatasetEval(data.Dataset):
         self.pointer = np.searchsorted(self.length_arr, length)
         print("Pointer Pointing at %d"%self.pointer)
         self.max_length = length
+
+    def renorm4t2m(self, features):
+        # renorm to t2m norms for using t2m evaluators
+        ori_mean = torch.tensor(self.dataset_mean).to(features)
+        ori_std = torch.tensor(self.dataset_std).to(features)
+        eval_mean = torch.tensor(self.mean).to(features)
+        eval_std = torch.tensor(self.std).to(features)
+        features = features * ori_std + ori_mean
+        features = (features - eval_mean) / eval_std
+        return features
 
     def inv_transform(self, data):
         return data * self.std + self.mean
