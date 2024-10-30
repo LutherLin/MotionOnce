@@ -419,7 +419,7 @@ class MaskTransformer(nn.Module):
         else:
             return cond
     
-    def sparse_attention_mask(self,xseq, k, n):
+    def sparse_attention_mask(self,xseq,n, k= None):
         xseq_len = xseq.shape[0]
         # 创建一个全为True的mask，表示所有位置默认被掩盖
         mask = torch.ones((xseq_len, xseq_len), dtype=torch.bool, device=xseq.device)
@@ -471,10 +471,11 @@ class MaskTransformer(nn.Module):
         if self.use_pos_enc:
             xseq = self.position_enc(xseq)
 
-        tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
+        # tgt_mask = self.generate_autoregressive_mask(xseq.shape[0],device=xseq.device)
+        tgt_mask = self.sparse_attention_mask(xseq=xseq,n=4)
         # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
         # xseq = self.norm_first(xseq)
-        output = self.seqTransEncoder(xseq, mask = ~tgt_mask)
+        output = self.seqTransEncoder(xseq, mask = tgt_mask)
         output = self.output_process(output)
         logits = output.permute(1,0,2)
 
