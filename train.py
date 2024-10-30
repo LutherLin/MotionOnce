@@ -5,7 +5,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from os.path import join as pjoin
 
-from models.mask_transformer.transformer import MaskTransformer
+from models.mask_transformer.tansformer import MaskTransformer
 
 from models.mask_transformer.transformer_trainer import MaskTransformerTrainer
 

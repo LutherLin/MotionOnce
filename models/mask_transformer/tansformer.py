@@ -461,6 +461,7 @@ class MaskTransformer(nn.Module):
         return orders
 
     def random_masking(self, x, orders):
+        # import pdb;pdb.set_trace()
         # generate token mask
         bsz, seq_len, embed_dim = x.shape
         mask_rate = self.mask_ratio_generator.rvs(1)[0]
@@ -486,8 +487,7 @@ class MaskTransformer(nn.Module):
 
         t = len(motions)
         if t:
-            padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1) #(b, seqlen+1)
-            mask = torch.cat([torch.zeros_like(mask[:, 0:1]), mask], dim=1) #(b, seqlen+1)
+            mask = torch.cat([torch.zeros_like(mask[:, 0:1]), mask], dim=1).bool() #(b, seqlen+1)
 
         xseq = torch.cat([cond, motions], dim=0)  if t else cond#(seqlen, b, latent_dim)
 
@@ -497,7 +497,7 @@ class MaskTransformer(nn.Module):
 
         # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
         # xseq = self.norm_first(xseq)
-        output = self.seqTransEncoder(xseq,tgt_mask = mask,src_key_padding_mask=padding_mask)
+        output = self.seqTransEncoder(xseq,src_key_padding_mask=mask)[1:,...]
         output = self.output_process(output)
         logits = output.permute(1,0,2)
 
@@ -542,7 +542,7 @@ class MaskTransformer(nn.Module):
         # labels = motions.clone()
 
 
-        x_ids = x_ids[:, :-1]
+        # x_ids = x_ids[:, :-1]
         #====================                ===================
         non_pad_mask = non_pad_mask[:,:x_ids.shape[1]]
 
@@ -550,7 +550,7 @@ class MaskTransformer(nn.Module):
         # add mask
         orders = self.sample_orders(bsz=bs)
         mask = self.random_masking(motions_.permute(1,0,2), orders)        
-        
+        # import pdb;pdb.set_trace()
         logits = self.trans_forward(motions_, cond_vector, non_pad_mask, force_mask,mask=mask)
         # 111
         # log = self.out_norm(logits)
@@ -662,7 +662,9 @@ class MaskTransformer(nn.Module):
             #                                         force_mask=force_mask,
             #                                         skip_cond=True)
 
-            logits = self.trans_forward(x, cond_vector, padding_mask0)
+            logits = self.trans_forward(motions=x, 
+                                        cond = cond_vector, 
+                                        padding_mask=padding_mask0)
             # 11111
             mean, log_val, Zt, motion_out = self.latentsampling(logits)
             postnet_input = motion_out.transpose(1, 2)
