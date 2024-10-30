@@ -174,6 +174,17 @@ class Text2MotionDatasetEval(data.Dataset):
         print("Pointer Pointing at %d"%self.pointer)
         self.max_length = length
 
+    def inverse_renorm4t2m(self, features):
+        # renorm to t2m norms for using t2m evaluators
+        train_mean = torch.tensor(self.dataset_mean).to(features)
+        train_std = torch.tensor(self.dataset_std).to(features)
+        ori_mean = torch.tensor(self.mean).to(features)
+        ori_std = torch.tensor(self.std).to(features)
+        features = features * ori_std + ori_mean
+        features = (features - train_mean) / train_std
+        return features
+
+
     def renorm4t2m(self, features):
         # renorm to t2m norms for using t2m evaluators
         ori_mean = torch.tensor(self.dataset_mean).to(features)
