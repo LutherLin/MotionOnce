@@ -311,6 +311,7 @@ class MaskTransformer(nn.Module):
         #     num_layers=num_layers,
         #     norm=nn.LayerNorm(self.latent_dim) if norm_first else None,
         # )
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, self.latent_dim))
         self.norm = nn.LayerNorm(self.latent_dim)
         self.norm_first = nn.LayerNorm(self.latent_dim)
         self.mask_ratio_generator = stats.truncnorm((self.mask_ratio_min - 1.0) / 0.25, 0, loc=1.0, scale=0.25)
@@ -497,7 +498,7 @@ class MaskTransformer(nn.Module):
 
         # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
         # xseq = self.norm_first(xseq)
-        output = self.seqTransEncoder(xseq,src_key_padding_mask=mask)[1:,...]
+        output = self.seqTransEncoder(xseq)[1:,...]
         output = self.output_process(output)
         logits = output.permute(1,0,2)
 
@@ -548,10 +549,17 @@ class MaskTransformer(nn.Module):
 
         motions_ = self.input_process(x_ids)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
         # add mask
+        mask_motion = motions_.permute(1,0,2) # (bsz,seq,dim)
         orders = self.sample_orders(bsz=bs)
-        mask = self.random_masking(motions_.permute(1,0,2), orders)        
+        mask = self.random_masking(mask_motion, orders)        
         # import pdb;pdb.set_trace()
-        logits = self.trans_forward(motions_, cond_vector, non_pad_mask, force_mask,mask=mask)
+        #掩码！！！！
+        mask_motion = mask_motion[(1-mask).nonzero(as_tuple=True)].reshape(bs, -1, self.latent_dim)
+        mask_tokens = self.mask_token.repeat(mask.shape[0], mask.shape[1], 1).to(x.dtype)
+        x_after_pad = mask_tokens.clone()
+        x_after_pad[(1 - mask).nonzero(as_tuple=True)] = mask_motion.reshape(mask_motion.shape[0] * mask_motion.shape[1], mask_motion.shape[2])
+        x_after_pad = x_after_pad.permute(1,0,2)
+        logits = self.trans_forward(x_after_pad, cond_vector, non_pad_mask, force_mask,mask=mask)
         # 111
         # log = self.out_norm(logits)
         # motion_out = self.motion_linear(logits)

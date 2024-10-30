@@ -455,7 +455,7 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, writer, ep, best_fid
         # motion_codes = motion_codes.permute(0, 2, 1)
         # mids.unsqueeze_(-1)
         # --直接导出mids
-        pred_motions = mids
+        pred_motions = val_loader.dataset.renorm4t2m(mids)
 
         et_pred, em_pred = eval_wrapper.get_co_embeddings(word_embeddings, pos_one_hots, sent_len, pred_motions.clone(),
                                                           m_length)
