@@ -381,6 +381,9 @@ class MaskTransformer(nn.Module):
 
 
     def __init_weights(self, module):
+
+        torch.nn.init.normal_(self.mask_token, std=.02)
+
         if isinstance(module, (nn.Linear, nn.Embedding)):
             module.weight.data.normal_(mean=0.0, std=0.02)
             if isinstance(module, nn.Linear) and module.bias is not None:
@@ -555,7 +558,7 @@ class MaskTransformer(nn.Module):
         # import pdb;pdb.set_trace()
         #掩码！！！！
         mask_motion = mask_motion[(1-mask).nonzero(as_tuple=True)].reshape(bs, -1, self.latent_dim)
-        mask_tokens = self.mask_token.repeat(mask.shape[0], mask.shape[1], 1).to(x.dtype)
+        mask_tokens = self.mask_token.repeat(mask.shape[0], mask.shape[1], 1).to(mask_motion.dtype)
         x_after_pad = mask_tokens.clone()
         x_after_pad[(1 - mask).nonzero(as_tuple=True)] = mask_motion.reshape(mask_motion.shape[0] * mask_motion.shape[1], mask_motion.shape[2])
         x_after_pad = x_after_pad.permute(1,0,2)
