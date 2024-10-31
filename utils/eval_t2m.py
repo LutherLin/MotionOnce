@@ -543,7 +543,8 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, writer, ep, best_fid
 
     if save_anim:
         rand_idx = torch.randint(bs, (3,))
-        data = pred_motions[rand_idx].detach().cpu().numpy()
+        mids_motions = mids
+        data = mids_motions[rand_idx].detach().cpu().numpy()
         captions = [clip_text[k] for k in rand_idx]
         lengths = m_length[rand_idx].cpu().numpy()
         save_dir = os.path.join(out_dir, 'animation', 'E%04d' % ep)
