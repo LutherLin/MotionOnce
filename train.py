@@ -22,6 +22,8 @@ from data.t2m_dataset import Text2MotionDataset
 from motion_loaders.dataset_motion_loader import get_dataset_motion_loader
 from models.t2m_eval_wrapper import EvaluatorModelWrapper
 
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 def plot_t2m(data, save_dir, captions, m_lengths):
     data = train_dataset.inv_transform(data)
@@ -92,7 +94,7 @@ if __name__ == '__main__':
                                       num_layers=opt.n_layers,
                                       num_heads=opt.n_heads,
                                       dropout=opt.dropout,
-                                      clip_dim=512,
+                                      clip_dim=768,
                                       cond_drop_prob=opt.cond_drop_prob,
                                       clip_version=clip_version,
                                       opt=opt)

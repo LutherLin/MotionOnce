@@ -27,6 +27,7 @@ class BaseOptions():
 
         self.parser.add_argument('--force_mask', action="store_true", help='True: mask out conditions')
         self.parser.add_argument('--pre_lens', type=int, default=5, help='previous motion lens for prompt')
+        self.parser.add_argument('--t5_path', type=str, default="checkpoints/sentence-t5-large", help='sentence tranformer path')
         self.initialized = True
 
     def parse(self):

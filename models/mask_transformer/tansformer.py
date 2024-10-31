@@ -23,6 +23,9 @@ from models.cross_attention import (SkipTransformerEncoder,
                                     TransformerEncoderLayer)
 from collections import OrderedDict
 
+from transformers import AutoModel, AutoTokenizer
+from sentence_transformers import SentenceTransformer
+
 
 def mask_by_order(mask_len, order, bsz, seq_len):
     masking = torch.zeros(bsz, seq_len).cuda()
@@ -285,7 +288,7 @@ class LatentSampling(nn.Module):
 
 class MaskTransformer(nn.Module):
     def __init__(self, num_joints, cond_mode, latent_dim=256, ff_size=1024, num_layers=8,
-                 num_heads=4, dropout=0.1, clip_dim=512, cond_drop_prob=0.1,
+                 num_heads=4, dropout=0.1, clip_dim=768, cond_drop_prob=0.1,
                  clip_version=None, opt=None, **kargs):
         super(MaskTransformer, self).__init__()
         print(f'latent_dim: {latent_dim}, ff_size: {ff_size}, nlayers: {num_layers}, nheads: {num_heads}, dropout: {dropout}')
@@ -377,9 +380,9 @@ class MaskTransformer(nn.Module):
         '''
 
         if self.cond_mode == 'text':
-            print('Loading CLIP...')
+            print('Loading T5 model...')
             self.clip_version = clip_version
-            self.clip_model = self.load_and_freeze_clip(clip_version)
+            self.t5_model = self.load_and_freeze_t5()
 
         self.noise_schedule = cosine_schedule
         if self.use_pos_enc:
@@ -399,7 +402,7 @@ class MaskTransformer(nn.Module):
             module.weight.data.fill_(1.0)
 
     def parameters_wo_clip(self):
-        return [p for name, p in self.named_parameters() if not name.startswith('clip_model.')]
+        return [p for name, p in self.named_parameters() if not name.startswith('t5_model.')]
 
     def load_and_freeze_clip(self, clip_version):
         clip_model, clip_preprocess = clip.load(clip_version, device='cpu',
@@ -416,11 +419,26 @@ class MaskTransformer(nn.Module):
 
         return clip_model
 
+    def load_and_freeze_t5(self):
+        device = next(self.parameters()).device
+        t5_model = SentenceTransformer(self.opt.t5_path).to(device)
+        tokenizer = t5_model.tokenizer
+
+        # Freeze CLIP weights
+        t5_model.eval()
+        for p in t5_model.parameters():
+            p.requires_grad = False
+
+        return t5_model
+
     def encode_text(self, raw_text):
         device = next(self.parameters()).device
-        text = clip.tokenize(raw_text, truncate=True).to(device)
-        feat_clip_text = self.clip_model.encode_text(text).float()
-        return feat_clip_text
+        # text = clip.tokenize(raw_text, truncate=True).to(device)
+        # feat_clip_text = self.clip_model.encode_text(text).float()
+
+        text_embeddings = self.t5_model.encode(raw_text, show_progress_bar=False, convert_to_tensor=True, batch_size=len(raw_text)).to(device)
+        # text_embeddings = text_embeddings.unsqueeze(1)
+        return text_embeddings
 
     def mask_cond(self, cond, force_mask=False):
         bs, d =  cond.shape
