@@ -498,7 +498,7 @@ class MaskTransformer(nn.Module):
         t = len(motions)
         if t:
             mask = torch.cat([torch.zeros_like(mask[:, 0:1]), mask], dim=1).bool() #(b, seqlen+1)
-
+            padding_mask = torch.cat([torch.zeros_like(padding_mask[:, 0:1]), padding_mask], dim=1)
         xseq = torch.cat([cond, motions], dim=0)  if t else cond#(seqlen, b, latent_dim)
 
 
@@ -507,7 +507,7 @@ class MaskTransformer(nn.Module):
 
         # tgt_mask = self.sparse_attention_mask(xseq, 1, 100)
         # xseq = self.norm_first(xseq)
-        output = self.seqTransEncoder(xseq)[1:,...]
+        output = self.seqTransEncoder(xseq, src_key_padding_mask = padding_mask)[1:,...]
         output = self.output_process(output)
         logits = output.permute(1,0,2)
 

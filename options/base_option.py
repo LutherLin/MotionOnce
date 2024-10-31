@@ -19,7 +19,7 @@ class BaseOptions():
         self.parser.add_argument('--latent_dim', type=int, default=512, help='Dimension of transformer latent.')
         self.parser.add_argument('--n_heads', type=int, default=8, help='Number of heads.')
         self.parser.add_argument('--n_layers', type=int, default=8, help='Number of attention layers.')
-        self.parser.add_argument('--ff_size', type=int, default=1024*4, help='FF_Size')
+        self.parser.add_argument('--ff_size', type=int, default=512*4, help='FF_Size')
         self.parser.add_argument('--dropout', type=float, default=0.1, help='Dropout ratio in transformer')
 
         self.parser.add_argument("--max_motion_length", type=int, default=196, help="Max length of motion")
