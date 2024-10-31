@@ -23,6 +23,12 @@ from models.cross_attention import (SkipTransformerEncoder,
                                     TransformerEncoderLayer)
 from collections import OrderedDict
 
+
+def mask_by_order(mask_len, order, bsz, seq_len):
+    masking = torch.zeros(bsz, seq_len).cuda()
+    masking = torch.scatter(masking, dim=-1, index=order[:, :mask_len.long()], src=torch.ones(bsz, seq_len).cuda()).bool()
+    return masking
+
 class InputProcess(nn.Module):
     def __init__(self, input_feats, latent_dim):
         super().__init__()
@@ -615,6 +621,100 @@ class MaskTransformer(nn.Module):
         # scaled_logits = aux_logits + (logits - aux_logits) * cond_scale
         # return scaled_logits
         return logits
+    
+    @torch.no_grad()
+    @eval_decorator
+    def sample(self, 
+                conds,
+                m_lens,
+                timesteps: int,
+                cond_scale: int,
+                temperature=1,
+                topk_filter_thres=0.9,
+                gsample=False,
+                force_mask=False
+               ):
+        # import pdb;pdb.set_trace()
+        device = next(self.parameters()).device
+        seq_len = max(m_lens) //self.outputs_per_step
+        batch_size = len(m_lens)
+        out_dim = self.num_joints * self.outputs_per_step
+        if self.cond_mode == 'text':
+            with torch.no_grad():
+                cond_vector = self.encode_text(conds)
+        elif self.cond_mode == 'action':
+            cond_vector = self.enc_action(conds).to(device)
+        elif self.cond_mode == 'uncond':
+            cond_vector = torch.zeros(batch_size, self.latent_dim).float().to(device)
+        else:
+            raise NotImplementedError("Unsupported condition mode!!!")
+        
+        num_dims = len(cond_vector.shape)
+        
+        assert num_dims >= 2, 'number of dimensions of your start tokens must be greater or equal to 2'
+
+        padding_mask = ~lengths_to_mask(m_lens//self.outputs_per_step, seq_len)
+        # Start from all tokens being masked
+        mask = torch.ones(batch_size,seq_len).to(device)
+        tokens = torch.zeros(batch_size, seq_len, out_dim).to(device)
+        orders = self.sample_orders(batch_size)
+        
+        num_iter = 16
+        for i in range(num_iter):
+            # import pdb;pdb.set_trace()
+            cur_tokens = tokens.clone()
+            processed_tokens = self.input_process(tokens).permute(1,0,2)
+            if i > 0:
+                mask_motion = processed_tokens[(1-mask).nonzero(as_tuple=True)].reshape(batch_size, -1, self.latent_dim)
+            mask_tokens = self.mask_token.repeat(mask.shape[0], mask.shape[1], 1).to(processed_tokens.dtype)
+
+            x_after_pad = mask_tokens.clone()
+
+            if i > 0:
+                x_after_pad[(1 - mask).nonzero(as_tuple=True)] = mask_motion.reshape(mask_motion.shape[0] * mask_motion.shape[1], mask_motion.shape[2])
+            x_after_pad = x_after_pad.permute(1,0,2)
+
+            z = self.trans_forward(x_after_pad, cond_vector, padding_mask, force_mask,mask=mask)
+            #(bsz, seq ,num joints )
+
+            mask_ratio = np.cos(math.pi / 2. * (i + 1) / num_iter)
+            mask_len = torch.Tensor([np.floor(seq_len.cpu().numpy() * mask_ratio)]).to(device)
+
+            # masks out at least one for the next iteration
+            mask_len = torch.maximum(torch.Tensor([1]).cuda(),
+                                     torch.minimum(torch.sum(mask, dim=-1, keepdims=True) - 1, mask_len))
+
+            # get masking for next iteration and locations to be predicted in this iteration
+            mask_next = mask_by_order(mask_len[0], orders, batch_size, seq_len).float()
+            if i >= num_iter - 1:
+                mask_to_pred = mask[:batch_size].bool()
+            else:
+                mask_to_pred = torch.logical_xor(mask[:batch_size].bool(), mask_next.bool())
+            mask = mask_next
+
+            # z = z[mask_to_pred.nonzero(as_tuple=True)]
+            _, _, _, yt = self.latentsampling(z)
+
+            postnet_input = yt.clone().transpose(1, 2)
+            postnet_output = self.postconvnet(postnet_input)
+            postnet_output = postnet_input + postnet_output
+            postnet_output = postnet_output.transpose(1, 2)
+
+            sampled_token_latent = postnet_output[mask_to_pred.nonzero(as_tuple=True)]
+            # latent sampling
+            cur_tokens[mask_to_pred.nonzero(as_tuple=True)] = sampled_token_latent
+
+            
+            
+            
+
+
+            tokens = cur_tokens.clone() # (batch,seq,1052)
+
+
+        output_ = tokens.reshape(batch_size,-1,self.num_joints)
+
+        return output_
 
     @torch.no_grad()
     @eval_decorator
