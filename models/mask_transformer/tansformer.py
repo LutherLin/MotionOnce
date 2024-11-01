@@ -677,7 +677,7 @@ class MaskTransformer(nn.Module):
         tokens = torch.zeros(batch_size, seq_len, out_dim).to(device)
         orders = self.sample_orders(batch_size)
         
-        num_iter = 12
+        num_iter = 18
         for i in range(num_iter):
             # import pdb;pdb.set_trace()
             cur_tokens = tokens.clone()
