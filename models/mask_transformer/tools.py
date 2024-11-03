@@ -174,26 +174,26 @@ def kl_divergence(y, mean, log_var):
     
     return kl_loss
 
-def cal_new_loss(mean, log_var,motion_out, post_out, labels , stop_tokens ,m_lens):
+def cal_new_loss(mean, log_var,motion_out, post_out, labels , stop_tokens ,m_lens, yt):
     # import pdb;pdb.set_trace()
     labels = labels.detach()
-    kl_loss = 1e-5 * kl_divergence(labels, mean, log_var)
+    kl_loss = 1e-4 * kl_divergence(yt, mean, log_var)
 
     mel_lossl1 = 1.0 * F.smooth_l1_loss(motion_out, labels)
-    mel_lossl2 = 1.0 * F.mse_loss(motion_out, labels)
+    mel_lossl2 = 0.1 * F.mse_loss(motion_out, labels)
     mel_loss = mel_lossl1 + mel_lossl2
 
     post_mel_lossl1 = F.smooth_l1_loss(post_out, labels)
-    post_mel_lossl2 = F.mse_loss(post_out, labels)
+    post_mel_lossl2 =0.1 * F.mse_loss(post_out, labels)
     post_mel_loss = post_mel_lossl1 + post_mel_lossl2
 
     stop_label = create_stop_tokens(m_lens=m_lens).detach()
     stop_tokens = stop_tokens.to(dtype=torch.float32)
-    bce_loss = nn.BCEWithLogitsLoss()(stop_tokens, stop_label)
+    bce_loss = 0.0 * nn.BCEWithLogitsLoss()(stop_tokens, stop_label)
 
     regre_loss = mel_loss + post_mel_loss
 
-    Flux_loss = 0.5 * nn.L1Loss()(mean[:,1:,:], labels[:,:-1,:])
+    Flux_loss = 0.5 * nn.L1Loss()(mean[:,1:,:], yt[:,:-1,:])
     # regre_loss = regre_loss + Flux_loss
     return regre_loss, bce_loss, kl_loss, Flux_loss
 

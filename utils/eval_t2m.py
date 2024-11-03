@@ -449,9 +449,9 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, writer, ep, best_fid
         # num_joints = 21 if pose.shape[-1] == 251 else 22
         # import pdb;pdb.set_trace()
         # (b, seqlen)
-        # mo = val_loader.dataset.inverse_renorm4t2m(pose)
-        mids = trans.sample(clip_text, m_length, time_steps, cond_scale, temperature=1)
-        # regre_loss_, bce_loss_, kl_loss_,flux_loss, mids, stop_tokens = trans(mo, clip_text, m_length)
+        mo = val_loader.dataset.inverse_renorm4t2m(pose)
+        # mids = trans.sample(clip_text, m_length, time_steps, cond_scale, temperature=1)
+        regre_loss_, bce_loss_, kl_loss_,flux_loss, mids, stop_tokens = trans(mo, clip_text, m_length)
         # motion_codes = motion_codes.permute(0, 2, 1)
         # mids.unsqueeze_(-1)
         # --直接导出mids
@@ -543,6 +543,7 @@ def evaluation_mask_transformer(out_dir, val_loader, trans, writer, ep, best_fid
 
     if save_anim:
         rand_idx = torch.randint(bs, (3,))
+        #!!!!!!!!!!11
         mids_motions = mids
         data = mids_motions[rand_idx].detach().cpu().numpy()
         captions = [clip_text[k] for k in rand_idx]
