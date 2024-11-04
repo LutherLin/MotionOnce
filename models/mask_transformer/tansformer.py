@@ -484,11 +484,11 @@ class MaskTransformer(nn.Module):
             mask = mask.to(device)
         
         return mask
-    def sample_orders(self, bsz):
+    def sample_orders(self, bsz,lens):
         # generate a batch of random generation orders
         orders = []
         for _ in range(bsz):
-            order = np.array(list(range(196 // self.outputs_per_step)))
+            order = np.array(list(range(lens // self.outputs_per_step)))
             np.random.shuffle(order)
             orders.append(order)
         orders = torch.Tensor(np.array(orders)).cuda().long()
@@ -537,15 +537,26 @@ class MaskTransformer(nn.Module):
 
         return logits
     
-    def post_forward(self,logits,bsz):
+    def latent_sample(self,logits):
+        '''
+        - logits 64 49 1052
+        return 
+        motion out 64 196 263
+        '''
+        mean, log_var, Zt, motion_out = self.latentsampling(logits)
+        motion_out = motion_out.reshape(motion_out.size(0),-1,self.num_joints) # 64 196 263
+
+        stop_tokens = self.stop_linear(logits).view(logits.size(0), -1)
+        return mean, log_var, motion_out, stop_tokens
+    
+    def post_forward(self,motion_out):
         '''
         logits 64 49 1052
         '''
-        mean, log_var, Zt, motion_out = self.latentsampling(logits)
         # motion_out -> y'
         # Zt -> z_t
         # out -> y''
-        motion_out = motion_out.reshape(bsz,-1,self.num_joints) # 64 196 263
+        # motion_out = motion_out.reshape(motion_out.size(0),-1,self.num_joints) # 64 196 263
         postnet_input = motion_out.transpose(1, 2) 
         
         out = self.postconvnet(postnet_input)
@@ -558,8 +569,8 @@ class MaskTransformer(nn.Module):
         out 64 196 263
         '''
 
-        stop_tokens = self.stop_linear(logits).view(logits.size(0), -1)
-        return mean, log_var, motion_out,out, stop_tokens
+        
+        return out
 
     def forward(self, motions, y, m_lens):
         # import pdb; pdb.set_trace()
@@ -570,6 +581,7 @@ class MaskTransformer(nn.Module):
         :return:
         '''
         # import pdb; pdb.set_trace() 
+        
         bs, ntokens,joints = motions.shape[0], motions.shape[1],motions.shape[2]
         device = motions.device
 
@@ -609,7 +621,7 @@ class MaskTransformer(nn.Module):
         motions_ = self.input_process(x_ids)# (b, seqlen-1, num_joints) -> (seqlen-1, b, latent_dim)
         # add mask
         mask_motion = motions_.permute(1,0,2) # (bsz,seq,dim)
-        orders = self.sample_orders(bsz=bs)
+        orders = self.sample_orders(bsz=bs, lens = ntokens)
         mask = self.random_masking(mask_motion, orders)        
         # import pdb;pdb.set_trace()
         #掩码！！！！
@@ -620,10 +632,10 @@ class MaskTransformer(nn.Module):
         x_after_pad = x_after_pad.permute(1,0,2)
         logits = self.trans_forward(x_after_pad, cond_vector, non_pad_mask, force_mask,mask=mask)
         # bsz, seq, joints
-        # 111
-        # log = self.out_norm(logits)
+
         # motion_out = self.motion_linear(logits)
-        mean, log_var, motion_out,out, stop_tokens = self.post_forward(logits=logits,bsz=bs)
+        mean, log_var, motion_out, stop_tokens = self.latent_sample(logits)
+        out = self.post_forward(motion_out)
         # mean, log_var, Zt, motion_out = self.latentsampling(logits)
         # motion_out -> y'
         # Zt -> z_t
@@ -712,7 +724,7 @@ class MaskTransformer(nn.Module):
         mask = torch.ones(batch_size,seq_len).to(device)
         tokens = torch.zeros(batch_size, seq_len, out_dim).to(device)
         # 64 49 1052
-        orders = self.sample_orders(batch_size)
+        orders = self.sample_orders(batch_size,max(m_lens))
         
         num_iter = self.num_iter
         for i in range(num_iter):
@@ -730,7 +742,7 @@ class MaskTransformer(nn.Module):
             x_after_pad = x_after_pad.permute(1,0,2)
 
             z = self.trans_forward(x_after_pad, cond_vector, padding_mask, force_mask,mask=mask)
-            #(bsz, seq ,num joints ) 64 196 263
+            #(bsz, seq ,num joints ) 64 49 1052
 
             mask_ratio = np.cos(math.pi / 2. * (i + 1) / num_iter)
             mask_len = torch.Tensor([np.floor(seq_len.cpu().numpy() * mask_ratio)]).to(device)
@@ -748,30 +760,27 @@ class MaskTransformer(nn.Module):
             mask = mask_next
 
             # z = z[mask_to_pred.nonzero(as_tuple=True)]
-            _, _, _, yt = self.latentsampling(z)
+            # _, _, _, yt = self.latentsampling(z)
 
-            postnet_input = yt.clone().transpose(1, 2)
-            postnet_output = self.postconvnet(postnet_input)
-            postnet_output = postnet_input + postnet_output
-            postnet_output = postnet_output.transpose(1, 2)
-
-            postnet_output = postnet_output.reshape(postnet_output.size(0), seq_len,-1)
+            # postnet_input = yt.clone().transpose(1, 2)
+            # postnet_output = self.postconvnet(postnet_input)
+            # postnet_output = postnet_input + postnet_output
+            # postnet_output = postnet_output.transpose(1, 2)
+            _, _, motion_out, stop_tokens = self.latent_sample(z)
+            
+            # mean, log_var, motion_out,postnet_output, stop_tokens = self.post_forward(logits=z,bsz=batch_size)
+            postnet_output = motion_out.reshape(motion_out.size(0), seq_len,-1)
             # 64 49 1052
 
             sampled_token_latent = postnet_output[mask_to_pred.nonzero(as_tuple=True)]
             # latent sampling
             cur_tokens[mask_to_pred.nonzero(as_tuple=True)] = sampled_token_latent
-
             
-            
-            
-
-
             tokens = cur_tokens.clone() # (batch,seq,1052)
 
 
-        output_ = tokens.reshape(batch_size,-1,self.num_joints)
-
+        output_ = tokens.reshape(tokens.size(0),-1,self.num_joints)
+        output_ = self.post_forward(output_)
         return output_
 
     @torch.no_grad()

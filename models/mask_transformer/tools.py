@@ -177,7 +177,7 @@ def kl_divergence(y, mean, log_var):
 def cal_new_loss(mean, log_var,motion_out, post_out, labels , stop_tokens ,m_lens, yt):
     # import pdb;pdb.set_trace()
     labels = labels.detach()
-    kl_loss = 1e-4 * kl_divergence(yt, mean, log_var)
+    kl_loss = 5e-5 * kl_divergence(yt, mean, log_var)
 
     mel_lossl1 = 1.0 * F.smooth_l1_loss(motion_out, labels)
     mel_lossl2 = 0.1 * F.mse_loss(motion_out, labels)
