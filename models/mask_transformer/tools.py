@@ -179,12 +179,12 @@ def cal_new_loss(mean, log_var,motion_out, post_out, labels , stop_tokens ,m_len
     labels = labels.detach()
     kl_loss = 5e-5 * kl_divergence(yt, mean, log_var)
 
-    mel_lossl1 = 1.0 * F.smooth_l1_loss(motion_out, labels)
+    mel_lossl1 = 1.0 * F.smooth_l1_loss(motion_out, labels, reduction="mean")
     mel_lossl2 = 0.1 * F.mse_loss(motion_out, labels)
     mel_loss = mel_lossl1 + mel_lossl2
 
     post_mel_lossl1 = F.smooth_l1_loss(post_out, labels)
-    post_mel_lossl2 =0.1 * F.mse_loss(post_out, labels)
+    post_mel_lossl2 =0.1 * F.mse_loss(post_out, labels, reduction="mean")
     post_mel_loss = post_mel_lossl1 + post_mel_lossl2
 
     stop_label = create_stop_tokens(m_lens=m_lens).detach()

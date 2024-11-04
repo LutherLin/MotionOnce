@@ -633,9 +633,15 @@ class MaskTransformer(nn.Module):
         logits = self.trans_forward(x_after_pad, cond_vector, non_pad_mask, force_mask,mask=mask)
         # bsz, seq, joints
 
+
+        mmm_mask = ~lengths_to_mask(m_lens, ntokens)
+
         # motion_out = self.motion_linear(logits)
         mean, log_var, motion_out, stop_tokens = self.latent_sample(logits)
         out = self.post_forward(motion_out)
+
+        
+        out[mmm_mask] = 0
         # mean, log_var, Zt, motion_out = self.latentsampling(logits)
         # motion_out -> y'
         # Zt -> z_t
@@ -781,6 +787,8 @@ class MaskTransformer(nn.Module):
 
         output_ = tokens.reshape(tokens.size(0),-1,self.num_joints)
         output_ = self.post_forward(output_)
+        mmm_mask = ~lengths_to_mask(m_lens, max(m_lens))
+        output_[mmm_mask] = 0
         return output_
 
     @torch.no_grad()
