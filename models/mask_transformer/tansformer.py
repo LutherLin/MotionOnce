@@ -549,7 +549,7 @@ class MaskTransformer(nn.Module):
         stop_tokens = self.stop_linear(logits).view(logits.size(0), -1)
         return mean, log_var, motion_out, stop_tokens
     
-    def post_forward(self,motion_out):
+    def post_forward(self,motion_out, m_lens):
         '''
         logits 64 49 1052
         '''
@@ -557,11 +557,14 @@ class MaskTransformer(nn.Module):
         # Zt -> z_t
         # out -> y''
         # motion_out = motion_out.reshape(motion_out.size(0),-1,self.num_joints) # 64 196 263
+        max_lens = max(m_lens)
+        m_mask = ~lengths_to_mask(m_lens,max_lens)
         postnet_input = motion_out.transpose(1, 2) 
         
         out = self.postconvnet(postnet_input)
         out = postnet_input + out
         out = out.transpose(1, 2) #64 196 263
+        out[m_mask] = 0
         '''
         mean 64 196 263
         val 64 196 263
@@ -634,14 +637,13 @@ class MaskTransformer(nn.Module):
         # bsz, seq, joints
 
 
-        mmm_mask = ~lengths_to_mask(m_lens, ntokens)
+
 
         # motion_out = self.motion_linear(logits)
         mean, log_var, motion_out, stop_tokens = self.latent_sample(logits)
-        out = self.post_forward(motion_out)
+        out = self.post_forward(motion_out, m_lens)
 
         
-        out[mmm_mask] = 0
         # mean, log_var, Zt, motion_out = self.latentsampling(logits)
         # motion_out -> y'
         # Zt -> z_t
@@ -786,9 +788,8 @@ class MaskTransformer(nn.Module):
 
 
         output_ = tokens.reshape(tokens.size(0),-1,self.num_joints)
-        output_ = self.post_forward(output_)
-        mmm_mask = ~lengths_to_mask(m_lens, max(m_lens))
-        output_[mmm_mask] = 0
+        output_ = self.post_forward(output_,m_lens)
+
         return output_
 
     @torch.no_grad()
